@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildlife-drone-program"
+version = "0.1.0"
+description = "Shared autonomy and simulation tooling for the Wildlife Drone Program"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+sim = [
+  "mavsdk>=2.0,<4",
+]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.6,<1",
+]
+
+[tool.setuptools.packages.find]
+include = ["shared*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
