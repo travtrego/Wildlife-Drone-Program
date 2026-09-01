@@ -72,7 +72,9 @@ async def run_smoke_mission(config: SitlMissionConfig) -> None:
 
 def parse_args() -> argparse.Namespace:
     default_config = Path(__file__).with_name("sitl_config.json")
-    parser = argparse.ArgumentParser(description="Run the Wildlife Drone Program SITL smoke mission")
+    parser = argparse.ArgumentParser(
+        description="Run the Wildlife Drone Program SITL smoke mission"
+    )
     parser.add_argument(
         "--config",
         type=Path,
