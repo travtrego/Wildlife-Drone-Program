@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+
+# ROS 2 / colcon
+build/
+install/
+log/
+
+# Jetson / local artifacts
+*.engine
+*.onnx
+*.plan
+*.bag
+*.db3
+
+# Flight logs and large datasets
+flight_logs/
+data/
+datasets/
+*.ulg
+*.bin
+*.tlog
+*.mp4
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets / credentials
+*.pem
+*.key
+secrets/
+credentials/
