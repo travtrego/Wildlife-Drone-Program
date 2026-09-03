@@ -47,18 +47,18 @@ The X500 is the primary proving ground. Modules that survive simulation, bench t
 
 ## First software milestone: Issue #4
 
-The first implementation branch builds the PX4 SITL + MAVSDK development path. It currently includes:
+The PX4 SITL + MAVSDK development path includes:
 
 - a Python project definition (`pyproject.toml`)
 - a simulation-only MAVSDK arm/takeoff/loiter/land smoke mission
 - local-SITL connection guardrails
-- unit tests for configuration and safety checks
+- unit tests for configuration, safety checks, and telemetry gates
 - GitHub Actions lint/test automation
 - a reproducible local setup procedure
 
-See [`simulation/mavsdk/README.md`](simulation/mavsdk/README.md) for the working plan.
+See [`simulation/mavsdk/README.md`](simulation/mavsdk/README.md) for setup and run instructions.
 
-The code can be prepared and reviewed entirely in GitHub, but Issue #4 is **not considered complete** until PX4 SITL and the smoke mission are successfully run on a development computer and the exact versions/commands are recorded.
+On 2026-09-03, the X500-class headless simulation successfully connected, passed position/home health checks, armed, took off, loitered, landed, and disarmed on Ubuntu 24.04.4 under WSL2. Exact versions, commands, observed output, and validation limits are recorded in [`docs/SITL_VALIDATION_2026-09-03.md`](docs/SITL_VALIDATION_2026-09-03.md). This is **simulation evidence only**, not hardware or real-flight validation.
 
 ## Local Python quick start
 
@@ -74,7 +74,7 @@ pytest
 
 The companion computer may request mission-level actions, but the autopilot retains hard authority over geofencing, flight stabilization, return-to-home, battery failsafes, link-loss behavior, and other safety-critical constraints.
 
-The first MAVSDK smoke mission is intentionally **SITL-only** and refuses non-local vehicle addresses. Real-aircraft command code will be introduced through a separate, explicitly validated path.
+The first MAVSDK smoke mission is intentionally **SITL-only** and binds to `127.0.0.1:14540`. It rejects remote addresses, wildcard listeners, and other ports. Do not forward a real aircraft into this loopback endpoint. Real-aircraft command code will be introduced through a separate, explicitly validated path.
 
 ## Development workflow
 
@@ -86,4 +86,4 @@ See [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md).
 
 ## Current status
 
-Repository scaffold is established and the first simulation-development implementation is underway. Hardware-specific flight code will be added only as each platform reaches its integration and validation stage.
+The first PX4/MAVSDK simulation has been executed successfully. Hardware-specific flight code will be added only as each platform reaches its integration and validation stage; no hardware validation is claimed.
