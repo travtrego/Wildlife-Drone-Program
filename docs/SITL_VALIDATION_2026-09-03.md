@@ -106,6 +106,34 @@ PASS: simulated arm -> takeoff -> loiter -> land mission completed.
 
 PX4 independently logged the same arming, takeoff, landing, and disarm transitions. The climb gate is 90% of target; this does not claim an exact 3.0 m measurement. The timed loiter began only after that gate.
 
+### 3. Clean-checkout reproduction
+
+Cloned committed revision b0447a73924547c7fe2daa05f9034b1ee47756d8 into a new Linux directory and created a new venv. This reused the installed Ubuntu/PX4/Gazebo prerequisites and the existing PX4 build; it was not a second physical machine or a clean OS reinstall.
+
+~~~bash
+cd ~/src
+git clone --single-branch --branch feat/issue-4-sitl-validation https://github.com/travtrego/Wildlife-Drone-Program.git Wildlife-Drone-Program-issue4-clean
+cd Wildlife-Drone-Program-issue4-clean
+git rev-parse HEAD
+git status --short
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e ".[dev,sim]" -c simulation/mavsdk/constraints-validated.txt
+.venv/bin/ruff check shared simulation tests
+.venv/bin/python -m compileall -q shared simulation
+.venv/bin/pytest
+~~~
+
+All checks passed; pytest reported 13 passed in 0.08 s. The fresh venv installed MAVSDK 3.17.2, pytest 8.4.2, and Ruff 0.16.6. After restarting the same HEADLESS=1 X500 target:
+
+~~~bash
+cd ~/src/Wildlife-Drone-Program-issue4-clean
+.venv/bin/python simulation/mavsdk/smoke_mission.py
+git status --short
+~~~
+
+The mission exited 0 with the same output as run 2, including airborne at 2.7 m and 5.0 s loiter. PX4 independently confirmed external arming, takeoff, landing, and disarm. The checkout remained clean. Ctrl+C stopped the simulator, and process inspection confirmed no PX4/Gazebo process remained. The subsequent documentation-only commit does not change the runtime code tested here.
+
 ### Local ULog evidence
 
 Base directory: /home/travt/src/PX4-Autopilot/build/px4_sitl_default/rootfs/log/2026-09-03/
@@ -114,6 +142,7 @@ Base directory: /home/travt/src/PX4-Autopilot/build/px4_sitl_default/rootfs/log/
 | --- | --- | --- |
 | Original | 18_29_58.ulg | 8a2fd4f178450eb26b99774f7c5e9c3d6df8b39868d28879f54695f807b2869b |
 | Strengthened | 18_34_27.ulg | 67d12f478f623c2bf2a2f7a9146c82ebf5071d81ea2e6c37a0a835acfd9d67ce |
+| Clean checkout | 18_47_39.ulg | 01ddb34f3b32a19cdbc535454782395c96c894ba3cda8a066c505f10d07bf417 |
 
 Filenames are recorded as produced by PX4; no timezone inference is made from them. Binary logs remain local and ignored by Git.
 
@@ -132,4 +161,4 @@ Filenames are recorded as produced by PX4; no timezone inference is made from th
 
 ## Remaining validation boundary
 
-Clean-checkout reproduction and final GitHub Actions status will be recorded after they execute. This does not claim a second fresh machine, Gazebo GUI rendering, ROS 2, bench tests, real aircraft, or real flight. Unit tests and CI are not substitutes for SITL evidence.
+Clean-checkout reproduction is verified above. GitHub Actions results are tracked on the accompanying validation PR, separately from this local runtime evidence. This does not claim a second fresh machine, Gazebo GUI rendering, ROS 2, bench tests, real aircraft, or real flight. Unit tests and CI are not substitutes for SITL evidence.
