@@ -6,6 +6,14 @@ A modular autonomy and aerial robotics program spanning three aircraft roles:
 - **Fighter 2430 VTOL** — long-endurance mapping and surveillance platform.
 - **Coyote** — advanced close-range autonomous sensing and multi-sensor robotics platform.
 
+## Coyote hexacopter — design record and Claude handoff
+
+Coyote is the **EFT E616P candidate hexacopter** with a **permanently installed, non-swappable research sensor suite**. The frame is selected for engineering study but **not approved for purchase**. Start with:
+- [Coyote Master Engineering Report](coyote/PLATFORM_MASTER_REPORT.md) — complete decision record, hardware and requirements.
+- [Engineering Feasibility](coyote/ENGINEERING_FEASIBILITY.md) — mass, battery, endurance and gimbal fit screening.
+- [Claude Code instructions](CLAUDE.md) and [independent Claude review request](coyote/CLAUDE_REVIEW_REQUEST.md) — handoff; **review not yet performed**.
+- [Coyote purchasing and propulsion gate (Issue #3)](https://github.com/travtrego/Wildlife-Drone-Program/issues/3).
+
 ## Program philosophy
 
 1. Prove simple behaviors before complex behaviors.
