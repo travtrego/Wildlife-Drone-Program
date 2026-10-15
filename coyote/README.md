@@ -5,6 +5,12 @@ Advanced close-range autonomous sensing and multi-sensor robotics platform.
 
 Coyote is the destination for autonomy that has already been proven on the X500 and for perception capabilities that benefit from a larger, more capable aircraft.
 
+## Complete platform report and Claude handoff
+
+- [**Master Engineering Report**](PLATFORM_MASTER_REPORT.md) — full aircraft history, decisions, fixed sensors, proposed placement, camera, mass, power, integration and procurement blockers.
+- [**Engineering Feasibility v0.1**](ENGINEERING_FEASIBILITY.md) — published/estimated inputs and illustrative battery/endurance budgets.
+- [**Claude independent review request**](CLAUDE_REVIEW_REQUEST.md) and [**repository Claude Code instructions**](../CLAUDE.md) — ready for a second-opinion review; **not yet executed**.
+
 ## Current architecture direction
 - EFT E616P folding hexacopter frame selected as the Coyote airframe candidate (not yet engineering-frozen or purchased)
 - Pixhawk 6X-class flight controller
