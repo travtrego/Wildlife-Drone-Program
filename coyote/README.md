@@ -14,7 +14,7 @@ Coyote is the destination for autonomy that has already been proven on the X500 
 - Sony ILX-LR1 + stabilized gimbal class RGB payload
 - OAK-D Pro W class depth / machine-vision sensor
 - Hesai JT128-class perception LiDAR candidate
-- modular thermal payload
+- permanently mounted thermal payload (model to be selected)
 
 ## Airframe selection — EFT E616P (selected, pending validation)
 - **User-selected platform:** EFT E616P, six-rotor folding industrial/agricultural frame.
@@ -30,6 +30,15 @@ Manufacturer references:
 - https://www.effort-tech.com/enm/e6
 - https://www.effort-tech.com/en/eps
 - https://www.effort-tech.com/en/e616p
+
+## Fixed, integrated payload architecture (owner decision, 2026-10-14)
+- **No mission-by-mission payload swapping.** Coyote must carry its full research sensor suite permanently, with secure mounts, wiring, calibration, and repeatable alignment.
+- The integrated sensor baseline consists of Sony ILX-LR1 + stabilized gimbal, modular-thermal concept upgraded to a **permanently mounted thermal sensor** (specific FLIR model still to be selected), OAK-D Pro W-class depth/vision sensor, Hesai JT128-class LiDAR candidate, RTK GNSS, Jetson Orin NX-class compute, and Pixhawk 6X-class flight controller.
+- Although sensors may be selectively powered or used during missions, **mechanical configuration stays fixed**.
+- Do **not** solve payload or endurance shortfalls by removing or swapping sensors; instead rework packaging, power, propulsion, endurance goals, or frame choice.
+- Design the aircraft around the **simultaneous installed mass** and conservative concurrent power/heat estimates (not the mass of a single sensor package).
+- Before clearing the selected EFT E616P for purchase, verify fixed mounts, weather/vibration protection, gimbal/landing-gear clearance, all camera/LiDAR fields of view, CG, rotor disk spacing, wiring, EMI/RF, cooling, thrust margin, mission endurance, and applicable aircraft-weight limits.
+- A fixed payload is a mechanical requirement, **not** a claim that all currently proposed hardware has been proven compatible.
 
 ## Design rules
 1. Do not duplicate safety-critical control on the Jetson.
