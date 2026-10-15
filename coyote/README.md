@@ -11,7 +11,7 @@ Coyote is the destination for autonomy that has already been proven on the X500 
 - Jetson Orin NX 16 GB-class companion computer
 - RTK GNSS
 - high-bandwidth IP data link plus independent flight telemetry/control path
-- Sony ILX-LR1 + stabilized gimbal class RGB payload
+- Sony ILX-LR1 + SEL70200G 70–200mm F4 lens + Gremsy T7 proposed for long-range wildlife imaging; pending physical/electrical approval
 - OAK-D Pro W class depth / machine-vision sensor
 - Hesai JT128-class perception LiDAR candidate
 - permanently mounted thermal payload (model to be selected)
@@ -39,6 +39,42 @@ Manufacturer references:
 - Design the aircraft around the **simultaneous installed mass** and conservative concurrent power/heat estimates (not the mass of a single sensor package).
 - Before clearing the selected EFT E616P for purchase, verify fixed mounts, weather/vibration protection, gimbal/landing-gear clearance, all camera/LiDAR fields of view, CG, rotor disk spacing, wiring, EMI/RF, cooling, thrust margin, mission endurance, and applicable aircraft-weight limits.
 - A fixed payload is a mechanical requirement, **not** a claim that all currently proposed hardware has been proven compatible.
+
+## Sony wildlife imaging subsystem — preferred engineering pairing (2026-10-15)
+**Status:** proposed component pairing for engineering validation. Do not purchase until the vendor-confirmed physical, electronic, and flight-integration gates below pass. Coyote retains its permanent, non-swappable sensor payload design.
+
+| Component | Candidate | Reference mass | Key reason |
+| --- | --- | ---: | --- |
+| RGB camera | Sony ILX-LR1, 61 MP full frame | 243 g | High-resolution wildlife images and mapping |
+| Lens | Sony FE 70–200mm F4 G OSS, original SEL70200G | 840 g, excludes tripod mount | 70–200 mm focal range, **constant barrel length** through zoom; 80 × 175 mm |
+| Gimbal | Gremsy T7 3-axis | 1,860 g | ~3,175 g gimbal *payload* rating and larger cage; unlike Pixy LR, intended for heavy/custom cameras |
+| **Subtotal** | Camera + lens + gimbal | **2,943 g** | Excludes hood, lens collar, balance weights, adapters, mounting, damping, cables, power electronics and zoom actuation |
+
+### Rejected or backup camera approaches
+- **Gremsy Pixy LR + Sony FE 85mm F1.8:** officially listed as compatible, and ~1,109 g nominal for lens + camera + gimbal; however 85 mm is limited for distant birds/animal identification, and Gremsy labels the 85 mm combination as *photography only*. Retain solely as a lower-mass fallback.
+- **Sony SEL70200G2 70–200mm F4 Macro G OSS II:** nominally lighter (794 g) but extends in length while zooming, making constant gimbal balance and obstacle clearance harder. Do not silently substitute for **SEL70200G**.
+- **T3V3 and other smaller cages:** the published weight rating alone does not establish balancing space with the proposed long lens. T7 preferred pending full dimensional check.
+
+### Optical rationale and limitations
+- Sony ILX-LR1 is ~9504 pixels across a 35.7 mm wide sensor. In an ideal pinhole approximation, a 30 cm subject at 200 m projects about 34 px at 85 mm, 54 px at 135 mm, and 80 px at 200 mm. These are geometric *upper bounds*, not a guaranteed identification range; sharpness, motion, atmospheric conditions, illumination, subject orientation, and ethical wildlife stand-off distances affect results.
+- **Remote zoom is not implemented by merely mounting SEL70200G.** Zoom is mechanically controlled, and a custom lens-ring actuator or proven commercial zoom drive plus control and balance testing would be required for in-flight optical zoom. A fixed initial focal setting is a fallback only; non-swappable sensors does not prohibit software-controlled zoom.
+- The Sony ILX-LR1 can record still images and movies, but correct onboard control/data interfaces must be integrated and verified independently of gimbal stabilization.
+
+### Required acceptance gates, all open
+- [ ] Obtain Gremsy written confirmation or bench proof that T7 cage, axes and balance range fit the **exact ILX-LR1 + SEL70200G** combination, including lens collar, camera body, HDMI/USB/power cables, filter/hood and full articulation; T7's camera list does **not** explicitly certify this combination.
+- [ ] Validate Sony ILX-LR1 lens electrical / AF / exposure compatibility and separate camera power, trigger, image transfer and video link; T7 gimbal stabilization alone is not a Sony camera integration kit.
+- [ ] Design, source, and bench-test the zoom ring drive, or formally document the restricted fixed focal-length initial configuration.
+- [ ] CAD model total pan/tilt roll sweep against E616P landing gear, rotors and payload mounts; measure ground clearance during landing.
+- [ ] Include minimum 2.943 kg camera system plus all ancillary hardware in permanent-installed full-aircraft mass and CG model; compared with Pixy LR + 85mm (~1.109 kg), ~1.834 kg extra before mounts.
+- [ ] Evaluate vibration isolation, wind load, thermal limits, environmental protection and camera pointing calibration.
+- [ ] Recalculate 25–30 minute mission goal, thrust margin and applicable aircraft-weight limits with all permanent sensors installed.
+
+### Technical references
+- https://docs.gremsy.com/gimbals/pixy-lr/faq
+- https://gremsy.com/products/gremsy-t7
+- https://docs.gremsy.com/gimbals/gremsy-t7/general
+- https://www.sony.ca/en/electronics/support/lenses-e-mount-lenses/sel70200g/specifications
+- https://www.sony.com/electronics/support/camcorders-and-video-cameras-interchangeable-lens-camcorders/ilx-lr1
 
 ## Design rules
 1. Do not duplicate safety-critical control on the Jetson.
