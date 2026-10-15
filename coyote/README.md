@@ -76,6 +76,15 @@ Manufacturer references:
 - https://www.sony.ca/en/electronics/support/lenses-e-mount-lenses/sel70200g/specifications
 - https://www.sony.com/electronics/support/camcorders-and-video-cameras-interchangeable-lens-camcorders/ilx-lr1
 
+## Engineering feasibility v0.1 (2026-10-15)
+**[Read the camera fit, installed mass, battery, hover-power and sensor layout feasibility report](ENGINEERING_FEASIBILITY.md).**
+
+- **Gremsy T7 + ILX-LR1 + original SEL70200G:** camera+glass mass meets T7 payload rating, but gimbal envelope, actual CG balance, in-flight optical zoom and gimbal travel remain **unverified**. Do not buy based on payload mass rating alone.
+- **E616P preliminary 12S weight model:** approximately **23.78 kg** with the reference six Hobbywing X8 propulsion units and a 3.421 kg Tattu 22Ah 12S example, with 1.17 kg margin below the US 55 lb small-UAS limit. All other unselected subsystems include placeholders, so this is NOT a frozen takeoff weight.
+- **Nominal idealized endurance screening:** about **19.9 min** (22Ah light battery), **22.6 min** (26Ah) and **27.4 min** (33Ah); the 33Ah option exceeds the 55 lb threshold in the current model. Calculations are bench-power estimates, not operational flight-time guarantees.
+- Battery discharge-current and vendor-controlled fit documentation are open **purchase blockers**; no purchase approvals have been granted.
+- Permanently installed sensor requirements stay unchanged. If this aircraft cannot satisfy required mass, energy or optical geometry, reevaluate power, packaging, propulsion or frame before compromising the mission.
+
 ## Design rules
 1. Do not duplicate safety-critical control on the Jetson.
 2. Keep Pixhawk near true CG and mechanically isolated.
