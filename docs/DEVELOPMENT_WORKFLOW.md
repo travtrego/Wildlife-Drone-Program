@@ -42,3 +42,7 @@ Every important flight behavior should eventually have:
 - result summary
 - relevant log identifier
 - follow-up action if failed
+
+## Documentation changes
+
+Follow [documentation ownership](DOCUMENTATION.md): requirements/decisions, component inputs, calculations, status and evidence each have a maintained home. Update dependent calculations when inputs change, and keep received reviews separate from accepted design changes.
