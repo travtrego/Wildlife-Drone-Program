@@ -1,44 +1,19 @@
 # COYOTE — Hexacopter Platform Master Engineering Report
-**Status:** consolidated decision record / Claude handoff — v1.0  
+**Status:** detailed integration report / historical rationale — v1.0; navigation reconciled 2026-10-17
 **Prepared:** 2026-10-15  
 **Repository:** [Wildlife-Drone-Program](https://github.com/travtrego/Wildlife-Drone-Program)  
 **Scope:** **Coyote heavy-duty six-rotor wildlife research platform ONLY**. Fighter 2430 VTOL is a separate long-endurance aircraft. X500 V2 is the test/reference aircraft, not the final Coyote.  
-**Evidence status:** synthesized from earlier user decisions, current GitHub documentation and published vendor specifications; not independently peer-reviewed by Claude, manufacturer-certified, or flight-tested. All quoted component masses and vendor figures require revision/SKU checks prior to purchasing.
+**Evidence status:** synthesized from earlier user decisions, current GitHub documentation and published vendor specifications; not manufacturer-certified or flight-tested; the received desk-review artifact and its limits are tracked separately. All quoted component masses and vendor figures require revision/SKU checks prior to purchasing.
+
+## Maintained records
+
+Current requirements, choices and procurement gates: [DECISIONS.md](DECISIONS.md). Component inputs: [bom.csv](bom.csv) and [BOM.md](BOM.md). Calculation method/results: [ENGINEERING_FEASIBILITY.md](ENGINEERING_FEASIBILITY.md). Received reviews: [review register](reviews/README.md).
+
+This report preserves detailed October 15 integration rationale, vendor claims and decision history. Conflicting listing dimensions are historical inputs; use the unresolved-specification record in DECISIONS.md and obtain exact-revision drawings before layout. No hardware fit or performance qualification is implied.
 
 ## 1. Executive decision summary
 
-**Owner-established requirements (do not silently change):**
-1. Build **Coyote as a hexacopter**, not the Fighter VTOL and not the X500 quadcopter.
-2. Preferred frame is the **EFT E616P**, an industrial folding six-rotor frame, *selected for engineering evaluation*, **not yet verified purchase-ready**.
-3. Carry **one permanently installed, non-swappable full sensor/payload suite**. No routine mission-by-mission sensor or camera changes. Sensors may be selectively powered, and optical zoom is permitted, but hardware stays attached.
-4. Missions: daylight/night wildlife observation and animal identification at sensible stand-off distances, high-resolution imagery, environmental surveying, 3D perception/mapping, obstacle awareness, computer vision, AI inference, SLAM/sensor fusion, and autonomous research.
-5. **Target ~25–30 min useful flight endurance with every sensor mounted**; not validated or promised. Do not reach the goal by removing hardware. Optimize structure, propulsion, power, and mission plan—or revisit frame/endurance/regulatory concept—before compromising permanent payload.
-6. Flight-critical stabilization, geofence, link-loss and battery failsafes, manual override and RTH live on autopilot; Jetson requests mission actions but is not permitted to bypass flight-safety boundaries.
-7. Validate algorithms through simulation and X500 bench/flight testing before Coyote use. Maintain logs and acceptance evidence.
-
-**Current overall verdict:** promising engineering concept, **procurement HOLD**. No verified CAD fit, camera/gimbal balance, thermal optical SKU, real installed mass, validated current margin, flight endurance or airworthiness testing. The project should not be presented as a final BOM.
-
-### Design decision authority matrix
-
-| Item | Current choice | Decision class | Evidence / restriction |
-|---|---|---|---|
-| Aircraft role | Close-range autonomous wildlife research/sensing | **Requirement** | Separate from Fighter VTOL |
-| Motor count | 6, industrial hexacopter | **Owner-selected** | Exact X layout, arms/propulsion not frozen |
-| Frame | EFT E616P | **Owner-selected candidate** | Purchase gated by CAD/fit/mass/energy |
-| Payload behavior | All sensors permanently installed | **Fixed requirement** | No swapping for mission or mass savings |
-| Main RGB camera | Sony ILX-LR1 61 MP | **Baseline choice** | Actual lens/control/gimbal integration remains open |
-| Telephoto lens | Original Sony SEL70200G FE 70–200mm F4 G OSS | **Preferred proposal** | 840 g; remote zoom not solved |
-| Gimbal | Gremsy T7 | **Preferred proposal** | Mass rating passes; camera envelope/balance unverified |
-| Thermal | Permanent FLIR Boson+ 640-class (earlier Hadron/Boson explored) | **Candidate class** | Final core/lens/housing/stabilization unselected |
-| LiDAR | Hesai JT128-class | **Leading candidate** | Local 3D perception, placement/FOV unknown |
-| Short-range vision | Luxonis OAK-D Pro W-class | **Baseline choice** | Depth is close range; not long-range avoidance |
-| Mission AI | NVIDIA Jetson Orin NX 16GB-class | **Baseline architecture** | Carrier, cooling, storage, power TBD |
-| Autopilot | Pixhawk 6X-class | **Baseline architecture** | SKU, pinout, vibration and redundant power TBD |
-| Navigation | F9P-class RTK GNSS | **Baseline architecture** | Antenna geometry/integration TBD |
-| Communications | High-bandwidth IP link AND separate flight telemetry/command | **Required architecture** | Radio models, range and failover TBD |
-| Motors/ESCs/props | 6× Hobbywing XRotor X8 + 30 in in **screening calculations only** | **Not selected** | Thrust/current/thermal/mounting validation needed |
-| Power | 12S nominal; 22/26/33/36Ah example packs | **Screening assumption** | BMS/continuous current/peak/CG/flight reserve pending |
-| Procurement | No full-platform part orders authorized | **HOLD** | Critical engineering gates not closed |
+The authoritative [requirements and decisions](DECISIONS.md) preserve the six-rotor, permanently installed suite and procurement hold. This report explains the engineering context; it does not maintain a parallel requirements matrix.
 
 ## 2. How we arrived here — decision history
 
@@ -113,59 +88,15 @@ Vendor references: https://docs.gremsy.com/gimbals/gremsy-t7/general ; https://g
 | Recorder/storage | SSD, camera media, flight and sensor logging | Dataset integrity, timestamps | Details OPEN |
 | Power | regulated 12S-derived rails, protected distribution and failsafes | Feed gimbal, Sony, Jetson, LiDAR etc. | Architecture must be designed, not simply connected directly |
 
-The full **mass, drag, thermal duty and peak current** apply to every mission whether software activates all sensors or not. If component substitution becomes necessary, verify same mission capability while retaining the static fully-installed design.
+Full installed **mass and drag** apply to every mission. Average current and heat depend on sensor duty cycle; supply and cooling must cover required concurrent peak operation. If component substitution becomes necessary, verify same mission capability while retaining the static fully-installed design.
 
-## 7. Preliminary mass estimate (screening BOM v0.1)
+## 7. Component and mass inputs
 
-**Manufacturer reference masses** (component data from cited source report):
+Use the maintained [component ledger](bom.csv) and [schema/evidence guide](BOM.md). It separates design status, source evidence and unknown ownership/installation/testing. Kit duplication and missing installed assemblies remain unresolved.
 
-| Known component | Installed kg |
-|---|---:|
-| EFT E616P frame | 6.410 |
-| 6× Hobbywing XRotor X8 integrated motor+ESC+30in propulsion at 1.150kg each (**model only**) | 6.900 |
-| Sony ILX-LR1 | 0.243 |
-| Original Sony SEL70200G | 0.840 |
-| Gremsy T7 | 1.860 |
-| Hesai JT128 | 0.265 |
-| OAK-D Pro W | 0.091 |
-| **Catalogue subtotal** | **16.609** |
+## 8. Battery and endurance screening
 
-**Explicit placeholders, not weighed/vendor-approved SKUs:** thermal assembled package 0.150kg; Jetson carrier/case/cooling/storage 0.450; Pixhawk/RTK/control 0.450; IP/telemetry radios 0.500; power distribution/wiring/converters 0.650; structures/dampers/landing support/enclosure 1.200; collar/zoom/control/camera cabling 0.350. **Subtotal placeholders 3.750 kg.**
-
-**Battery reference:** lightweight 22Ah 12S pack 3.421kg, *unapproved for discharge headroom*.
-
-**Total example installed mass: 16.609 + 3.750 + 3.421 = 23.780 kg (~52.43 lb).** US 55lb is ~24.948kg, leaving **only 1.168kg** apparent headroom. Incomplete kit-inclusion lists, supports, large camera mounts, battery box, safety redundancy, thermal optics or stronger landing gear can consume that quickly. Actual frame may include/remit subsystems already counted; clarify exact EFT kit and motor clamp interfaces before trusting ledger.
-
-**Do not quote 23.78 kg as Coyote's actual takeoff weight**; it is an assumption-rich example.
-
-## 8. Battery, discharge and endurance feasibility (screening only)
-
-Calculation basis: one 12S pack nominally 44.4V; Hobbywing X8 30x11 **46V** static bench interpolation near required thrust / 6; six motors; allowance 120W continuous non-propulsion load; 80% of nominal battery Wh treated as *idealized usable energy*, no measured wind/drag/temperature, no emergency reserve proof, no voltage-sag model.
-
-```text
-hover_thrust_per_motor_kg = AUW_kg / 6
-hover_propulsion_W = 6 * interpolated_X8_bench_input_power(hover_thrust_per_motor_kg)
-total_average_W = hover_propulsion_W + assumed_120W_nonpropulsion
-idealized_minutes = pack_Wh * assumed_0.80 / total_average_W * 60
-```
-
-Hobbywing manufacturer X8 MFP 30×11 46V table publishes 3535g thrust at 317.5W and 4467g at 435.7W. **These are stationary bench operating points, not in-flight efficiency or single-motor-out assurances.** https://www.hobbywing.com/en/products/xrotor-x8108
-
-| Example battery | Battery mass | Modeled AUW | Idealized endurance | Relative to US 55lb |
-|---|---:|---:|---:|---|
-| 12S 22Ah high-energy | 3.421 kg | 23.780 kg | 19.9 min | 1.17 kg below |
-| 12S 26Ah Neo | 4.180 kg | 24.539 kg | 22.6 min | 0.41 kg below |
-| 12S 33Ah Neo | 5.148 kg | 25.507 kg | 27.4 min | 0.56 kg ABOVE |
-| 12S 36Ah Neo | 5.501 kg | 25.860 kg | 29.3 min | 0.91 kg ABOVE |
-| 12S 22Ah conventional smart | 6.000 kg | 26.359 kg | 17.5 min | 1.41 kg ABOVE |
-
-**IMPORTANT: modeled time ≠ useful mission time.** Wind, maneuvering, usable discharge energy, battery aging, vibration, changing voltage, flight-controller safety reserves and thermal derating are omitted.
-
-**Current:** the modeled ~2.35kW load at nominal 44.4V is ~53A even at hover. The cited lightweight 22Ah pack is reported at only 66A continuous; that leaves limited margin for climb, gust response, voltage sag, and safety. A pack that reaches an idealized flight time but cannot deliver safe transient current **fails**. Also, greater battery mass increases required hover power.
-
-**55lb regulatory concern:** typical US Part 107 small-UAS operation requires aircraft weigh **less than 55lb at takeoff including attached equipment**. The model's 33/36Ah cases exceed this; exceptions or alternative approvals are separate legal/operational planning, not automatic. Avoid designing right against this threshold with unresolved mass placeholders. See FAA: https://www.faa.gov/newsroom/small-unmanned-aircraft-systems-uas-regulations-part-107 .
-
-**Conclusion:** the 25–30 minute target with the complete permanent payload and under 55lb is **not shown achievable** in this model. Motor/prop/battery optimization and calibrated flight power trials are required. The current E616P cannot be called “perfect” solely based on size/payload marketing.
+The [feasibility study](ENGINEERING_FEASIBILITY.md#3-battery-and-endurance-scenarios-not-flight-qualified) owns the method, battery scenarios, current limits and caveats. These are screening calculations, not usable mission endurance or motor-out assurance. Updating an input requires recalculating affected results.
 
 ## 9. Software, safety and data architecture
 
@@ -191,7 +122,7 @@ PX4/Pixhawk 6X  -- independent manual control and telemetry
 
 Recommended program stack per repository: **PX4, QGroundControl, MAVSDK/Python, ROS 2, OpenCV and inference tools**. Distinguish position reporting, high-rate sensor storage and low-rate safety commands. Plan a shared timebase (GNSS/PPS/PTP or validated alternative), sensor frames/extrinsics, calibration, and rigorous logs for reproducible wildlife data.
 
-**Testing ladder:** code/unit tests → PX4 SITL → hardware-in-loop/bench → X500 reference flights → reviewed logs/flight envelope → Coyote ground test/hover validation → progressively complex autonomous field trials. X500 is being mechanically assembled separately and is not a proxy for proving E616P structural/thermal endurance.
+**Testing ladder:** code/unit tests → PX4 SITL → hardware-in-loop/bench → X500 reference flights → reviewed logs/flight envelope → Coyote ground test/hover validation → progressively complex autonomous field trials. X500 hardware acceptance remains undocumented in the inspected repository and is not a proxy for proving E616P structural/thermal endurance.
 
 Safety-related requirements: operator command authority, geofences, RTL, degraded GPS actions, motor/ESC failure behavior, independent RF control, battery margin, recording of control-state transitions, no dangerous autonomous maneuvers based solely on experimental ML output.
 
@@ -236,7 +167,7 @@ Safety-related requirements: operator command authority, geofences, RTL, degrade
 ## 12. Program integration and boundaries
 
 - **Coyote is not the Fighter 2430 VTOL.** The Fighter is a different 4+1 lift-and-cruise aircraft for endurance and wide-area surveys; avoid carrying over its autopilot or payload/battery assumptions uncritically.
-- **X500 V2** is the user’s current assembly and low-risk PX4/MAVSDK reference bench. It is not sized for Coyote's complete heavy sensor suite.
+- **X500 V2** is the planned PX4/MAVSDK reference aircraft. Assembly and physical acceptance need dated evidence; it is not sized for Coyote's complete heavy sensor suite.
 - **Shared software** is inherited only after validation. Keep Coyote hardware-specific configs inside `coyote/`, promote code with stable tested interfaces into `shared/`.
 - The role of the six-rotor Coyote is persistent multichannel close-range observation / sensing; it must not be forced to meet long-range VTOL mission profiles.
 
@@ -245,7 +176,7 @@ Safety-related requirements: operator command authority, geofences, RTL, degrade
 This report consolidates known design conversations and documents in this repository. It is not a record of a hardware purchase, vendor communication, CAD fit, flight test or formal third-party review. Information missing from accessible historical context should be marked **UNKNOWN**, not filled in by assumption.
 
 Primary sources:
-- Coyote current specifications: [README.md](README.md)
+- Coyote current requirements and choices: [DECISIONS.md](DECISIONS.md)
 - Preliminary full weight/power/camera study: [ENGINEERING_FEASIBILITY.md](ENGINEERING_FEASIBILITY.md)
 - Program architecture: [../docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
 - GitHub open frame/propulsion issue: https://github.com/travtrego/Wildlife-Drone-Program/issues/3
@@ -268,4 +199,4 @@ Treat this report and [ENGINEERING_FEASIBILITY.md](ENGINEERING_FEASIBILITY.md) a
 5. Regulatory/airworthiness/wildlife impact risks that may block the operating concept.
 6. Ranked corrective actions, owner/vendor evidence required, and specific changes recommended. Label each as **confirmed, calculated, provisional, or unknown**.
 
-**Claude-review status:** NOT YET RUN. This file is prepared so an external Claude/Claude Code reviewer can work from the identical source of truth.
+**Review status:** a supplied desk-review artifact is registered in [reviews/README.md](reviews/README.md). Its claims and proposals are not adopted or independently verified here. This brief remains available for a structured audit.
