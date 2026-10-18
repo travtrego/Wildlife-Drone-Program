@@ -11,12 +11,15 @@ def test_default_config_is_valid() -> None:
 
 
 def test_local_sitl_addresses_are_allowed() -> None:
-    assert is_local_sitl_address("udp://:14540")
+    assert is_local_sitl_address("udpin://127.0.0.1:14540")
+    assert is_local_sitl_address("udpin://localhost:14540")
     assert is_local_sitl_address("udp://127.0.0.1:14540")
     assert is_local_sitl_address("udp://localhost:14540")
 
 
 def test_non_local_or_wrong_port_is_rejected() -> None:
+    assert not is_local_sitl_address("udpin://0.0.0.0:14540")
+    assert not is_local_sitl_address("udp://:14540")
     assert not is_local_sitl_address("udp://192.168.1.20:14540")
     assert not is_local_sitl_address("udp://:14550")
 
@@ -37,7 +40,7 @@ def test_load_sitl_config(tmp_path) -> None:
     path.write_text(
         json.dumps(
             {
-                "system_address": "udp://:14540",
+                "system_address": "udpin://127.0.0.1:14540",
                 "takeoff_altitude_m": 2.5,
                 "loiter_seconds": 3.0,
                 "connection_timeout_s": 20.0,

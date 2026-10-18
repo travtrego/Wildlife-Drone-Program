@@ -28,9 +28,9 @@ Flight-critical stabilization, geofencing, battery/link failsafes, return home a
 
 ## Implemented software
 
-The default-branch implementation is a small Python SITL scaffold: configuration validation, an arm/takeoff/loiter/land smoke mission, six configuration tests and lint/compile/unit CI. Platform perception, ROS 2 integration, mission management and real-aircraft autonomy remain planned.
+The default-branch implementation is a small Python SITL package: configuration validation with loopback-only listener guards, an arm/takeoff/airborne-check/loiter/land smoke mission with telemetry gates, unit tests and lint/compile/unit CI. Platform perception, ROS 2 integration, mission management and real-aircraft autonomy remain planned.
 
-Successful headless simulation runs and stronger telemetry/listener guards are documented in [open PR #6](https://github.com/travtrego/Wildlife-Drone-Program/pull/6). They are not yet part of the default-branch implementation. [Validation evidence](docs/VALIDATION.md) records the exact revision and limits.
+Successful headless X500 simulation runs from [PR #6](https://github.com/travtrego/Wildlife-Drone-Program/pull/6) are recorded in [`docs/SITL_VALIDATION_2026-09-03.md`](docs/SITL_VALIDATION_2026-09-03.md). This is simulation evidence only, not hardware or real-flight validation. [Validation evidence](docs/VALIDATION.md) records the exact revision and limits.
 
 ## Development
 

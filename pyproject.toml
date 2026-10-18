@@ -11,7 +11,7 @@ dependencies = []
 
 [project.optional-dependencies]
 sim = [
-  "mavsdk>=2.0,<4",
+  "mavsdk>=3.0,<4",
 ]
 dev = [
   "pytest>=8,<9",
@@ -23,6 +23,7 @@ include = ["shared*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
 
 [tool.ruff]

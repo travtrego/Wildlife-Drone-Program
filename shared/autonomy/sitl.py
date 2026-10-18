@@ -13,7 +13,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class SitlMissionConfig:
-    system_address: str = "udp://:14540"
+    system_address: str = "udpin://127.0.0.1:14540"
     takeoff_altitude_m: float = 3.0
     loiter_seconds: float = 5.0
     connection_timeout_s: float = 30.0
@@ -37,8 +37,8 @@ def is_local_sitl_address(address: str) -> bool:
     """Return True only for the local UDP endpoint reserved for our SITL smoke test."""
     normalized = address.strip().lower()
     return normalized in {
-        "udp://:14540",
-        "udp://0.0.0.0:14540",
+        "udpin://127.0.0.1:14540",
+        "udpin://localhost:14540",
         "udp://127.0.0.1:14540",
         "udp://localhost:14540",
     }

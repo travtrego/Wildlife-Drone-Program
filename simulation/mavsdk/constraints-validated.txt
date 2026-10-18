@@ -1,0 +1,5 @@
+# Top-level versions validated on Ubuntu 24.04.4 / Python 3.12.3, 2026-09-03.
+# This is not a complete transitive dependency lockfile.
+mavsdk==3.17.2
+pytest==8.4.2
+ruff==0.16.6

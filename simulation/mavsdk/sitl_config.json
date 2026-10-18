@@ -1,5 +1,5 @@
 {
-  "system_address": "udp://:14540",
+  "system_address": "udpin://127.0.0.1:14540",
   "takeoff_altitude_m": 3.0,
   "loiter_seconds": 5.0,
   "connection_timeout_s": 30.0,

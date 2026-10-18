@@ -19,6 +19,7 @@ async def _wait_for_connection(drone, timeout_s: float) -> None:
         async for state in drone.core.connection_state():
             if state.is_connected:
                 return
+        raise RuntimeError("Connection telemetry stream ended before connection")
 
     await asyncio.wait_for(wait(), timeout=timeout_s)
 
@@ -28,8 +29,35 @@ async def _wait_for_health(drone, timeout_s: float) -> None:
         async for health in drone.telemetry.health():
             if health.is_global_position_ok and health.is_home_position_ok:
                 return
+        raise RuntimeError("Health telemetry stream ended before readiness")
 
     await asyncio.wait_for(wait(), timeout=timeout_s)
+
+
+async def _wait_until_in_air(drone, timeout_s: float = 30.0) -> None:
+    async def wait() -> None:
+        async for in_air in drone.telemetry.in_air():
+            if in_air:
+                return
+        raise RuntimeError("In-air telemetry stream ended before takeoff")
+
+    await asyncio.wait_for(wait(), timeout=timeout_s)
+
+
+async def _wait_for_takeoff_altitude(
+    drone, target_altitude_m: float, timeout_s: float = 30.0
+) -> float:
+    # PX4 slows near the setpoint, so 90% is enough to prove the climb completed.
+    minimum_altitude_m = target_altitude_m * 0.9
+
+    async def wait() -> float:
+        async for position in drone.telemetry.position():
+            if position.relative_altitude_m >= minimum_altitude_m:
+                return position.relative_altitude_m
+
+        raise RuntimeError("Position telemetry stream ended before takeoff altitude")
+
+    return await asyncio.wait_for(wait(), timeout=timeout_s)
 
 
 async def _wait_until_landed(drone, timeout_s: float = 30.0) -> None:
@@ -37,6 +65,7 @@ async def _wait_until_landed(drone, timeout_s: float = 30.0) -> None:
         async for in_air in drone.telemetry.in_air():
             if not in_air:
                 return
+        raise RuntimeError("In-air telemetry stream ended before landing")
 
     await asyncio.wait_for(wait(), timeout=timeout_s)
 
@@ -62,6 +91,14 @@ async def run_smoke_mission(config: SitlMissionConfig) -> None:
     await drone.action.arm()
     await drone.action.takeoff()
 
+    await _wait_until_in_air(drone)
+    reached_altitude_m = await _wait_for_takeoff_altitude(
+        drone, config.takeoff_altitude_m
+    )
+    print(
+        f"Airborne at {reached_altitude_m:.1f} m; "
+        f"loitering for {config.loiter_seconds:.1f} s ..."
+    )
     await asyncio.sleep(config.loiter_seconds)
 
     print("Landing ...")
