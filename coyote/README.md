@@ -1,28 +1,20 @@
 # Coyote
 
-## Role
-Advanced close-range autonomous sensing and multi-sensor robotics platform.
+Six-rotor wildlife research and multi-sensor robotics aircraft. **Procurement HOLD.**
 
-Coyote is the destination for autonomy that has already been proven on the X500 and for perception capabilities that benefit from a larger, more capable aircraft.
+## Read in this order
 
-## Current architecture direction
-- industrial multirotor frame, final layout still subject to engineering freeze
-- Pixhawk 6X-class flight controller
-- Jetson Orin NX 16 GB-class companion computer
-- RTK GNSS
-- high-bandwidth IP data link plus independent flight telemetry/control path
-- Sony ILX-LR1 + stabilized gimbal class RGB payload
-- OAK-D Pro W class depth / machine-vision sensor
-- Hesai JT128-class perception LiDAR candidate
-- modular thermal payload
+1. [Requirements, decisions and open gates](DECISIONS.md) — authoritative current design record.
+2. [Component ledger guide](BOM.md) and [CSV](bom.csv) — candidate components, quantities, mass assumptions and unknowns.
+3. [Engineering feasibility](ENGINEERING_FEASIBILITY.md) — screening method/results and limitations.
+4. [Platform master report](PLATFORM_MASTER_REPORT.md) — detailed integration rationale, historical decisions and vendor questions.
+5. [Review register](reviews/README.md) — supplied desk review, proposals and unresolved claims.
+6. [Program validation evidence](../docs/VALIDATION.md) — simulation versus hardware qualification.
 
-## Design rules
-1. Do not duplicate safety-critical control on the Jetson.
-2. Keep Pixhawk near true CG and mechanically isolated.
-3. Keep compute thermally managed and electrically separated from sensitive navigation hardware.
-4. Treat battery placement as a CG-trim tool.
-5. Prove every autonomy behavior on a lower-risk platform or in simulation before promotion.
-6. Do not add payload merely because capacity exists; every sensor must justify mass, power, drag, thermal load, and integration cost.
+The full sensor suite stays permanently installed. EFT E616P is the preferred engineering candidate, conditional on fit and performance. No supplier rating, estimated mass or modeled flight time closes the purchase gate.
 
-## Software inheritance
-Coyote should reuse stable modules from `shared/` for mission management, telemetry, logging, safety interfaces, and common message definitions. Coyote-specific work should focus on richer perception, sensor fusion, obstacle understanding, and local autonomous decision-making.
+Coyote-specific perception, fusion, mounting and aircraft configuration remain planned. Software is inherited from `shared/` only after appropriate validation; [architecture](../docs/ARCHITECTURE.md) defines the flight-control boundary.
+
+## Where to record changes
+
+Use [documentation ownership](../docs/DOCUMENTATION.md). Keep requirements in DECISIONS.md, component inputs in bom.csv and calculated scenarios in ENGINEERING_FEASIBILITY.md. This page deliberately contains no duplicate dimension or endurance tables.
