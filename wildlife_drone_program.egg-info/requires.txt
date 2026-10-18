@@ -1,0 +1,7 @@
+
+[dev]
+pytest<9,>=8
+ruff<1,>=0.6
+
+[sim]
+mavsdk<4,>=2.0
