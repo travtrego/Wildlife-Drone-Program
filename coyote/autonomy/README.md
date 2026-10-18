@@ -12,7 +12,7 @@ Deterministic, dependency-free gate that decides whether the companion computer 
 4. Mode not in `HOLD`/`MISSION`/`OFFBOARD`, or no explicit operator delegation → reject.
 5. Not armed and airborne → reject (arming/takeoff stay with the operator and PX4).
 6. De-escalating actions (`HOLD`, `RETURN_TO_LAUNCH`, `LAND`) → allow.
-7. `GOTO_LOCAL` → allow only inside the advisory altitude band and home radius and above the advisory battery reserve; otherwise reject with a *recommended* action (`HOLD` or `RETURN_TO_LAUNCH`) that the gate never issues itself.
+7. `GOTO_LOCAL` → allow only inside the advisory altitude band and home radius and above the advisory battery reserve (battery must be a 0.0–1.0 fraction; values outside that range, such as MAVSDK's 0–100 percent passed straight in, are rejected); otherwise reject with a *recommended* action (`HOLD` or `RETURN_TO_LAUNCH`) that the gate never issues itself.
 
 ### Evidence status
 

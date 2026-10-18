@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+coyote/__init__.py
+coyote/autonomy/__init__.py
+coyote/autonomy/action_gate.py
+shared/__init__.py
+shared/autonomy/__init__.py
+shared/autonomy/sitl.py
+tests/test_coyote_action_gate.py
+tests/test_sitl_config.py
+wildlife_drone_program.egg-info/PKG-INFO
+wildlife_drone_program.egg-info/SOURCES.txt
+wildlife_drone_program.egg-info/dependency_links.txt
+wildlife_drone_program.egg-info/requires.txt
+wildlife_drone_program.egg-info/top_level.txt

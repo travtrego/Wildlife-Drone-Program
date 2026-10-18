@@ -107,6 +107,19 @@ def test_goto_battery_reserve_boundary_is_inclusive() -> None:
     assert evaluate_request(GOTO_OK, replace(FLYING, battery_remaining_fraction=0.40)).allowed
 
 
+@pytest.mark.parametrize("battery", [5.0, 40.0, 80.0, 100.0, 1.01, -0.01, math.inf])
+def test_goto_rejects_battery_outside_fraction_range(battery) -> None:
+    # MAVSDK remaining_percent is 0-100; passing it unconverted must not
+    # silently bypass the reserve check (5.0 would otherwise read as "above 0.40").
+    decision = evaluate_request(GOTO_OK, replace(FLYING, battery_remaining_fraction=battery))
+    assert not decision.allowed
+    assert decision.recommended is ActionKind.RETURN_TO_LAUNCH
+
+
+def test_goto_full_battery_fraction_is_allowed() -> None:
+    assert evaluate_request(GOTO_OK, replace(FLYING, battery_remaining_fraction=1.0)).allowed
+
+
 @pytest.mark.parametrize(
     ("north", "east", "alt", "fragment"),
     [

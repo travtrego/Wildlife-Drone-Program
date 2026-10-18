@@ -208,6 +208,14 @@ def _evaluate_goto(
             "battery state unknown; refusing to extend flight",
             recommended=ActionKind.RETURN_TO_LAUNCH,
         )
+    # MAVSDK reports remaining_percent as 0-100; a value outside 0.0-1.0 means
+    # the caller passed the wrong units and the reserve check would never fire.
+    if not 0.0 <= battery <= 1.0:
+        return _reject(
+            f"battery value {battery!r} outside 0.0-1.0 fraction "
+            "(percent passed instead of fraction?); refusing to extend flight",
+            recommended=ActionKind.RETURN_TO_LAUNCH,
+        )
     if battery < limits.min_battery_fraction_for_goto:
         return _reject(
             f"battery {battery:.0%} below advisory goto reserve "
