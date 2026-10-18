@@ -1,6 +1,8 @@
 # Shared Autonomy Stack
 
-Reusable code promoted from platform-specific development after validation.
+Reusable code is intended to be promoted from platform-specific development after appropriate validation.
+
+**Implemented today:** package initializers and `autonomy/sitl.py` configuration helpers. The directories below are a future architecture sketch, not existing modules. The helper's presence does not establish hardware/flight qualification; see [validation evidence](../docs/VALIDATION.md).
 
 Planned modules:
 

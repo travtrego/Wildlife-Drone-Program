@@ -2,7 +2,7 @@
 
 This directory implements Issue #4's first software milestone: a repeatable, simulation-only Python mission that connects to PX4 SITL, waits for health, arms, takes off, loiters briefly, and lands.
 
-## What can be prepared in GitHub now
+## Implemented in the default-branch scaffold
 
 - Python project structure
 - MAVSDK smoke-mission code
@@ -11,9 +11,13 @@ This directory implements Issue #4's first software milestone: a repeatable, sim
 - CI lint/test workflow
 - setup/run documentation
 
-## What still requires a development computer
+## Branch and evidence status — 2026-10-17
 
-The repository cannot prove PX4 SITL actually launches until it is run on a compatible development machine. The commands below are therefore a **candidate bootstrap procedure** until the first successful local run is recorded.
+This file describes the default-branch scaffold. Successful headless runs and stronger loopback/telemetry guards are recorded in [open PR #6](https://github.com/travtrego/Wildlife-Drone-Program/pull/6), not yet merged. Use the [validation index](../../docs/VALIDATION.md) and [revision-pinned procedure](https://github.com/travtrego/Wildlife-Drone-Program/blob/2cb5102ae6bbae4c927ae33f87a21d0abc249a27/simulation/mavsdk/README.md) for recorded execution. Default-branch commands below remain the earlier scaffold procedure.
+
+## Development-computer procedure
+
+The first successful local runs are recorded on the validation branch. The scaffold commands below do not include that branch's strengthened listener, telemetry gates or validated constraints.
 
 Recommended first environment: Ubuntu 24.04 LTS or Ubuntu under WSL2.
 
@@ -78,7 +82,7 @@ PASS: simulated arm -> takeoff -> loiter -> land mission completed.
 
 ## Safety boundary
 
-`smoke_mission.py` is deliberately simulation-only. Its configuration validator accepts only local UDP port 14540 endpoints. Real-aircraft control will get a separate entry point, separate configuration, and explicit bench/flight validation later.
+`smoke_mission.py` is intended for simulation only. The default-branch validator also accepts blank/wildcard UDP listeners on port 14540; those are not strict loopback restrictions. PR #6 rejects them. A listener address alone cannot prove a vehicle is simulated; do not bridge hardware into this endpoint. Real-aircraft control will get a separate entry point, separate configuration, and explicit bench/flight validation later.
 
 ## Definition of done for Issue #4
 
@@ -91,4 +95,4 @@ Issue #4 is complete only when a fresh development machine can reproduce all of 
 5. Unit tests and CI pass.
 6. The exact host OS, Python version, PX4 revision, simulator target, and MAVSDK version are recorded.
 
-Until that local run happens, this branch is a **software scaffold**, not a flight-proven environment.
+Local SITL runs are recorded in PR #6, pending review/merge. Independent fresh-machine reproduction remains unproven; the documented clean checkout reused installed prerequisites on one laptop. No physical flight qualification is claimed.

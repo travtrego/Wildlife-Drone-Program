@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-10-15
 **Decision:** HOLD — preliminary engineering model, not a vendor-certified fit, airworthy configuration, verified flight endurance or purchasing authorization.
-**Mission requirement:** Permanently mounted Sony telephoto RGB, thermal, Hesai JT128 LiDAR, Luxonis OAK-D Pro W, RTK, Jetson Orin NX 16GB, Pixhawk 6X. No routine payload swapping.
+**Requirements and gates:** maintained in [DECISIONS.md](DECISIONS.md). This study evaluates the existing permanent-suite screening configuration; pending review alternatives are not applied.
 **Frame candidate:** EFT E616P folding six-rotor frame. Candidate, not purchased or mechanically validated.
 
 ## Executive finding
@@ -36,36 +36,11 @@
 
 ## 2. Installed mass ledger (one 12S battery)
 
-### Known catalogue masses, with exact manufacturer documents
+The maintained [component ledger](bom.csv) contains quantities, per-item mass, evidence class, design status, source and unknown ownership/installation/test status. See [BOM.md](BOM.md) for schema and update rules. Inputs below were reconciled with that ledger during the October 17 documentation cleanup; the model remains the October 15 scenario.
 
-| Item | Quantity | Each (kg) | Installed (kg) | Status |
-|---|---:|---:|---:|---|
-| EFT E616P frame | 1 | 6.410 | 6.410 | Manufacturer claim; verify exact kit includes tank, tray, power plate, landing gear |
-| Hobbywing XRotor X8 integrated 30-inch motor+ESC+props | 6 | 1.150 | 6.900 | **Modeling candidate only**; not selected propulsion, verify 35/40mm arm-clamp variant |
-| Sony ILX-LR1 camera | 1 | 0.243 | 0.243 | Catalogue |
-| Sony SEL70200G original lens | 1 | 0.840 | 0.840 | Catalogue; **excludes** tripod collar |
-| Gremsy T7 gimbal | 1 | 1.860 | 1.860 | Catalogue |
-| Hesai JT128 LiDAR | 1 | 0.265 | 0.265 | Catalogue |
-| Luxonis OAK-D Pro W | 1 | 0.091 | 0.091 | Catalogue |
+Catalogue-claim subtotal **16.609 kg** + assembly placeholders **3.750 kg** + example 22Ah battery **3.421 kg** = **23.780 kg**. These are modeled values, not weighed aircraft data. Recalculate scenarios whenever the ledger changes.
 
-Subtotal above **16.609 kg**, excludes battery and every unselected assembly below.
-
-### PLACEHOLDERS — must replace with weighed SKUs or CAD BOM
-
-| Assembly | Estimated installed kg | Why uncertain |
-|---|---:|---|
-| FLIR Boson+ 640 thermal including lens, breakout, housing and rigid bracket | 0.150 | Exact focal length, camera housing, stabilization and mount not selected; bare core is only ~7.5 g |
-| Jetson Orin NX + carrier board + heatsink/case/SSD | 0.450 | Vendor implementation dependent |
-| Pixhawk 6X, RTK units, GNSS antenna(s), radio receiver | 0.450 | Specific revisions and antenna locations unknown |
-| IP video/data radio plus independent control/telemetry hardware | 0.500 | Link throughput, frequency and antenna package TBD |
-| Power harness, regulators, wiring, protections, converter and connectors | 0.650 | Depends on regulator and wire gauge for actual current |
-| Mount adapters, camera dampers, LiDAR/OAK support, landing gear changes, electronics enclosure | 1.200 | Largest structural unknown; new legs/brackets could weigh more |
-| Lens collar, zoom hardware, HDMI/USB/trigger cables, additional camera mounting | 0.350 | Not designed; depends on how zoom is implemented |
-| **Tattu 12S 22Ah 300Wh/kg example battery** | **3.421** | Published specific product mass, NOT approved as sufficient discharge-current architecture |
-
-**Illustrative total = 23.780 kg**, approximately 52.43 lb, leaving only **1.168 kg** below the 55 lb (24.948 kg) small-UAS ceiling, *before measurement uncertainties or additional equipment*. Underlying 16.609 kg catalogue subtotal does not establish that all required components have been included in the frame kit.
-
-> Potential duplication or omissions are possible: E616P frame-kit inclusions need checking and some subsystem placeholders may hide hardware not otherwise counted. Do not treat this ledger as a validated BOM or as a safe-to-fly weight.
+Potential duplication or omissions remain: exact frame-kit inclusions are unknown and subsystem placeholders may hide additional mounting, electrical or structural hardware. Do not treat this as a final BOM or procurement authorization.
 
 ## 3. Battery and endurance scenarios (NOT flight-qualified)
 
@@ -109,7 +84,10 @@ Example peak/nominal design accounting: Jetson 25–40 W (config dependent); JT1
 
 **Status:** plausible packaging envelope; no verified fit check. A dimensioned model or vendor-supplied STEP/STP assembly and 1:1 fit mockup remain required.
 
-## 5. Engineering decisions / procurement gates
+## 5. Historical study checklist / current procurement gates
+
+The following is the October 15 study checklist, retained for calculation context. [DECISIONS.md](DECISIONS.md#procurement-gates--all-remain-open) owns current gate status; the [review register](reviews/README.md) records later input. A checked modeling task is not a closed procurement gate.
+
 
 - [x] Owner elected **permanent, non-swappable payload**.
 - [x] EFT E616P selected as preferred hex frame.

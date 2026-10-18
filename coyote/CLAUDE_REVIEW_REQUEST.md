@@ -1,12 +1,13 @@
 # Claude independent Coyote engineering review request
 
-**Not yet reviewed by Claude.** This is a prepared request/handoff for Claude/Claude Code to execute later.
+**Structured review brief.** A supplied October 15 desk review is now registered in [reviews/README.md](reviews/README.md). Its exact input revision and claims are not independently verified; proposals remain pending. This brief is retained for a structured engineering audit.
 
 ## Review objective
 
 Act as an independent skeptical UAV systems engineer reviewing **Coyote only**, the permanently equipped **EFT E616P hexacopter** wildlife research aircraft. Do not conflate it with the Fighter VTOL or X500 training quad. The owner wants **all planned sensors installed at once**, not modular mission swaps.
 
 Read these before answering:
+0. [Requirements and decisions](DECISIONS.md), [ledger guide](BOM.md) and [review register](reviews/README.md)
 1. [Platform Master Report](PLATFORM_MASTER_REPORT.md)
 2. [Engineering Feasibility](ENGINEERING_FEASIBILITY.md)
 3. [Coyote README](README.md)

@@ -1,0 +1,195 @@
+COYOTE — REVIEW, PROPOSALS AND INDIVIDUAL-ID PLAN
+=================================================
+Date: October 15, 2026
+Project: Wildlife Drone Program / Coyote (EFT E616P hexacopter)
+Repo: https://github.com/travtrego/Wildlife-Drone-Program
+Reviewed: "Coyote_Full_Platform_Report_for_Claude.txt" + repo CLAUDE.md
+
+STATUS: Desk review only. Claude checked arithmetic and vendor spec pages.
+No vendor outreach, fit checks, bench tests or flight tests were done.
+Nothing in the repo or issue #3 has been changed. All endurance figures
+below are MODEL ESTIMATES, not measured.
+
+
+1. VERDICT ON THE CURRENT REPORT
+--------------------------------
+What's good:
+- Honest about evidence. Separates CANDIDATE / ESTIMATE / OPEN items.
+- Doesn't trust the E616P "16 kg effective load" marketing number.
+- Keeps flight-critical safety on Pixhawk/PX4, not the Jetson.
+- Arithmetic checks out: 23.78 kg model AUW, ~19.9 idealized min,
+  ~53 A hover on the 22Ah case all reproduce.
+
+Core problem:
+The three requirements conflict. A full sensor suite, a 25–30 min
+endurance target, and an AUW under 55 lb can't all be met by the current
+design. The report's own numbers show this; it should state it plainly.
+
+Specific issues:
+- The 22Ah light pack is effectively disqualified. ~53–61 A hover against
+  a 66 A continuous rating leaves no margin for climb, gusts or spikes.
+- The 80% usable-energy figure has no landing reserve and no
+  wind/maneuver margin. Real mission time will be well below the
+  idealized numbers.
+- The 1.17 kg margin under 55 lb is likely already gone. Mounts, landing
+  gear and enclosure (1.2 kg) and harness/power distribution (0.65 kg)
+  look low for a 3 kg gimbal, a LiDAR mast and 12S wiring at ~100 A
+  peaks. Nothing is budgeted for a second battery.
+- The T7 + ILX-LR1 + 70–200 package (~3.3 kg with collar/zoom hardware)
+  is the single biggest avoidable weight. The lens has a mechanical zoom
+  ring, so in practice it would be flown at a fixed focal length anyway.
+
+
+2. PROPOSALS
+------------
+
+P1. SPLIT THE CAMERA JOB  [OWNER DECISION REQUIRED]
+Replace T7 + SEL70200G with two permanently installed units:
+  a) Sony ILX-LR1 + FE 85mm F1.8 on a Gremsy Pixy LR (~1.1 kg package,
+     prior screening). Gremsy lists the 85mm as compatible but
+     "photography only"; that's fine because video comes from (b).
+     Role: 61MP color stills for ID, mapping, high-res records.
+  b) Integrated zoom/thermal gimbal, e.g. SIYI ZT30 (870 g vendor spec):
+     30x optical zoom, 4K30 video, 640x512 thermal, laser rangefinder
+     (5–1200 m), 3-axis, MAVLink/PX4, Ethernet video.
+     Role: zoomed video, thermal detection, range-to-animal logging.
+Net effect: ~1.3 kg saved. Real in-flight zoom without motorizing a
+mechanical zoom ring. The rangefinder logs stand-off distance.
+Still satisfies "no sensor swaps": all hardware is permanently installed.
+Tradeoffs / open items:
+  - The telephoto moves off the Sony, which changes the current owner
+    requirement wording.
+  - The ZT30's thermal may not match a Boson+ for research-grade or
+    radiometric data (UNVERIFIED). Keep the Boson+ as an option if needed.
+  - ZT30 4K is small-sensor video: fine for detection and ID frames,
+    not documentary grade (owner confirmed documentary grade not needed).
+  - If Sony video is ever wanted, use a 55mm on the Pixy LR instead of
+    the 85mm (not flagged photo-only by Gremsy).
+Ruled out: Gremsy T3V3 (1.2 kg, 1.7 kg payload). Its 100 mm cage depth is
+too short for the 70–200.
+
+P2. KEEP THE HOBBYWING X8 (CORRECTS AN EARLIER SUGGESTION)
+I first suggested lighter motors. That was wrong. Per the vendor tables:
+  - X6 Plus saves ~1.8 kg total but needs ~449 W vs ~380 W per motor at
+    ~4 kg thrust (24" vs 30" props), so the net endurance is worse. Its
+    30 mm arm also doesn't match the E616P's ~40 mm.
+  - The X8 G2 weighs 1,095 g (not 1,150 g as modeled): -0.33 kg total.
+  - At ~4 kg/axis you're below the X8 G2's recommended 5–7.5 kg/axis band.
+    That's fine for efficiency and gives good motor-out margin (~4.9
+    kg/axis on 5 motors vs 17.5 kg max thrust).
+  - Confirm the X8 G2 clamp fits the exact E616P arm diameter.
+
+P3. PICK THE BATTERY BY CURRENT FIRST, CAPACITY SECOND
+  - Require continuous discharge >= ~2x hover current (~130 A).
+  - The 22Ah light pack (66 A) fails. Check C-rating, BMS, connector,
+    fusing, bay fit and CG for the 33Ah-class options.
+
+P4. HONEST ENDURANCE MODEL AND TARGET
+Revised assumptions (Claude estimate):
+  - X8 G2 vendor 46V thrust/power table, interpolated
+  - 150 W non-propulsion load (was 120 W)
+  - 70% usable energy, i.e. land with ~25% reserve (was 80%, no reserve)
+  - +10% wind/maneuver margin
+  - Mounts +0.4 kg, harness +0.25 kg over the original placeholders
+
+  Config            Battery  AUW (lb)        Realistic min
+  ----------------  -------  --------------  -------------
+  Current design    22Ah     53.1            ~15
+  Current design    26Ah     54.8            ~17
+  Current design    33Ah     56.9 (OVER 55)  ~21
+  Current design    36Ah     57.7 (OVER 55)  ~22
+  Split-RGB (P1)    22Ah     50.1            ~16
+  Split-RGB (P1)    26Ah     51.8            ~19
+  Split-RGB (P1)    33Ah     53.9            ~22   <- recommended
+  Split-RGB (P1)    36Ah     54.7 (too thin) ~24
+
+Recommendation: Split-RGB + 33Ah-class pack, ~22 min, ~1 lb margin under 55.
+Change the acceptance target to ">= 20 min usable with 25% reserve,
+measured in hover logs". Treat 25–30 min as a stretch goal.
+Formulas:
+  per_rotor_kg = AUW / 6
+  watts = (6 * X8G2_power(per_rotor_kg) + 150) * 1.10
+  minutes = (Ah * 44.4 * 0.70 / watts) * 60
+
+P5. PUT THE MODEL IN THE REPO
+  - coyote/bom.csv: part, mass, source URL, status (CONFIRMED / CALCULATED /
+    ASSUMED / UNVERIFIED / OWNER DECISION).
+  - A small Python script that regenerates the mass/endurance table from
+    the CSV. Every part swap then updates the numbers automatically
+    instead of someone hand-editing the report.
+
+P6. COMPLIANCE CHECK
+EFT, Hobbywing and SIYI are Chinese manufacturers. If grant money or an
+agency partner is ever involved, check the American Security Drone Act
+and the funder's rules before purchasing.
+
+
+3. MISSION FOCUS: IDENTIFYING INDIVIDUAL COYOTES
+------------------------------------------------
+Owner goal: identify individual coyotes. Documentary-grade video is not
+needed.
+
+Reality check: coyotes are a "plain" species with no unique coat pattern,
+so ID is hard regardless of camera. The closest evidence is a red fox
+camera-trap study: one trained observer identified individuals in ~99% of
+~170k photos (192 foxes), using:
+  - Short fur color on the muzzle, chest and legs
+  - Tail shape, ear shape and notches, scars, injuries, deformities
+  - Body size, build and condition
+  - Many high-res color photos from multiple angles
+  - Location and time context to narrow candidates
+  - A human doing the matching. The authors doubted automated systems
+    would reach that accuracy.
+A separate study found that ID errors systematically inflate population
+estimates, so mistakes matter.
+
+Implications for Coyote:
+  - Angle matters more than zoom. Top-down views hide the muzzle, chest
+    and legs. Fly oblique/side-on from stand-off distance.
+  - Thermal detects and locates but won't identify. ID needs daylight
+    color imagery.
+  - The split setup fits this well: ZT30 30fps zoom video gives many
+    angles per pass, and the Sony at 85mm gives 61MP stills.
+  - RTK geotags + timestamps supply the territory context that made the
+    fox study work.
+  - Workflow: the Jetson detects and tracks; a human confirms IDs. Don't
+    plan on fully automated ID.
+
+Acceptance test BEFORE major purchases:
+  Place a coyote-size target with small ear-notch and scar markings at
+  50, 100 and 150 m. Check whether the ZT30 at max zoom and the Sony at
+  85mm resolve them. The result sets the real stand-off distance. That
+  matters because a 30-inch hexacopter is loud and coyotes are wary.
+
+Research coordination:
+  - Talk to RI DEM early about permits and methods.
+  - Ear tags or collars on a few animals (by authorized researchers) give
+    ground truth to check your IDs against.
+
+
+4. NEXT STEPS (PENDING OWNER APPROVAL)
+-------------------------------------
+[ ] Owner decision on P1 (split RGB) vs keeping T7 + 70–200.
+[ ] Get ZT30 datasheet focal length/pixel pitch; run the resolution test.
+[ ] Get E616P SKU/revision drawing; confirm X8 G2 arm fit and bay space
+    for the Pixy LR, ZT30, LiDAR mast and batteries.
+[ ] Shortlist 12S ~33Ah packs with >= ~130 A continuous; re-run the model.
+[ ] Add bom.csv + model script to the repo (P5).
+[ ] Post this summary to issue #3 and update the master report once
+    approved.
+
+
+5. SOURCES
+----------
+Hobbywing X8 G2 datasheet:
+  https://zbotic.in/wp-content/uploads/2025/10/X8-G2%E6%8A%80%E6%9C%AF%E5%8F%82%E6%95%B0-%E9%A9%AC8.29-1.pdf
+Hobbywing X6 Plus: https://hobbywing.com/en/products/xrotor-x6-plus269
+Gremsy Pixy LR: https://gremsy.com/products/pixy-lr
+Gremsy T3V3 specs: https://docs.gremsy.com/gimbals/gremsy-t3v3/getting-started/specification
+SIYI ZT30: https://irlock.com/products/siyi-zt30-optical-pod-four-sensors
+Red fox individual ID from camera traps:
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC6508734
+ID errors inflate population estimates:
+  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7156508/
+
+END
