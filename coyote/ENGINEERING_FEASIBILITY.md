@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-10-15
 **Decision:** HOLD — preliminary engineering model, not a vendor-certified fit, airworthy configuration, verified flight endurance or purchasing authorization.
-**Requirements and gates:** maintained in [DECISIONS.md](DECISIONS.md). This study evaluates the existing permanent-suite screening configuration; pending review alternatives are not applied.
+**Requirements and gates:** maintained in [DECISIONS.md](DECISIONS.md). This study evaluates the October 15 permanent-suite screening configuration (T7 + 70–200, Boson+, original X8). The owner adopted the review's P1–P5 changes on 2026-10-18; the tables below are **not yet recalculated** for them.
 **Frame candidate:** EFT E616P folding six-rotor frame. Candidate, not purchased or mechanically validated.
 
 ## Executive finding

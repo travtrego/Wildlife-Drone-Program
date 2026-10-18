@@ -1,6 +1,6 @@
 # Coyote component ledger
 
-[bom.csv](bom.csv) is the maintained component/mass input ledger for the **October 15 screening configuration**, not an order list, weighed aircraft or inventory. Requirements and accepted choices belong in [DECISIONS.md](DECISIONS.md); methods/scenarios belong in [ENGINEERING_FEASIBILITY.md](ENGINEERING_FEASIBILITY.md).
+[bom.csv](bom.csv) is the maintained component/mass input ledger for the **October 15 screening configuration** (superseded in part by the 2026-10-18 owner decisions in [DECISIONS.md](DECISIONS.md): camera, thermal and motor rows are stale until recalculated), not an order list, weighed aircraft or inventory. Requirements and accepted choices belong in [DECISIONS.md](DECISIONS.md); methods/scenarios belong in [ENGINEERING_FEASIBILITY.md](ENGINEERING_FEASIBILITY.md).
 
 ## Schema and evidence
 

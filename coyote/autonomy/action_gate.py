@@ -80,8 +80,9 @@ class VehicleSnapshot:
     telemetry_age_s: float
     # Explicit operator authorization for companion autonomy. A PX4 flight mode
     # alone cannot prove delegation (e.g. HOLD may be pilot- or failsafe-set),
-    # so the gate rejects everything unless this is True. How it is sourced
-    # (RC aux switch, GCS command, ...) is an open design decision.
+    # so the gate rejects everything unless this is True. Sourced from a
+    # ground-station command and cleared on failsafe or link loss (R6 in
+    # coyote/DECISIONS.md); that wiring is not implemented yet.
     operator_delegated: bool = False
 
 
