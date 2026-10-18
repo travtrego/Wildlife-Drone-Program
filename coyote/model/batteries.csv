@@ -1,0 +1,6 @@
+id,battery,mass_kg,energy_wh,continuous_a,source_note
+tattu_22ah_semisolid,"Tattu 12S 22Ah semi-solid",3.421,976.8,66,"ENGINEERING_FEASIBILITY.md section 3; 66 A max continuous as published"
+tattu_neo_26ah,"Tattu Neo 26Ah 12S",4.180,1154.4,,"ENGINEERING_FEASIBILITY.md section 3; continuous rating not transcribed"
+tattu_neo_33ah,"Tattu Neo 33Ah 12S",5.148,1465.2,,"ENGINEERING_FEASIBILITY.md section 3; continuous rating not transcribed"
+tattu_neo_36ah,"Tattu Neo 36Ah 12S",5.501,1598.4,,"ENGINEERING_FEASIBILITY.md section 3; continuous rating not transcribed"
+tattu_22ah_smart,"Conventional Tattu 22Ah smart",6.000,976.8,,"ENGINEERING_FEASIBILITY.md section 3; continuous rating not transcribed"

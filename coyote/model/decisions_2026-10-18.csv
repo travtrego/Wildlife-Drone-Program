@@ -1,0 +1,8 @@
+action,id,component,quantity,mass_each_kg,mass_evidence,notes
+remove,lens,,,,,"P1: SEL70200G replaced by split camera setup"
+remove,gimbal,,,,,"P1: Gremsy T7 replaced by split camera setup"
+remove,camera_ancillary,,,,,"P1: no collar or zoom drive needed"
+remove,thermal,,,,,"Boson+ dropped; ZT30-class thermal used instead"
+add,stills_package,"Sony 85mm F1.8 lens + Gremsy Pixy LR (body stays in rgb row)",1,0.857,review_claim,"Oct 15 review: ~1.1 kg package incl. 0.243 kg ILX-LR1 body; unverified"
+add,zoom_thermal_gimbal,"SIYI ZT30-class zoom/thermal/rangefinder gimbal",1,0.870,review_claim,"Oct 15 review: 870 g vendor spec; unverified"
+set_mass,propulsion,,,1.095,review_claim,"P2: X8 G2 mass per Oct 15 review; power curve not yet transcribed"
