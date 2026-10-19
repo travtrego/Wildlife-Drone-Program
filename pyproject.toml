@@ -19,7 +19,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["shared*", "coyote*"]
+include = ["shared*", "coyote*", "fighter_vtol*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
