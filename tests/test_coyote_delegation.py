@@ -260,3 +260,17 @@ def test_pilot_mode_on_ground_revokes_ground_grant() -> None:
     auth.observe(replace(ON_GROUND, armed=True, flight_mode="POSCTL"), False, 0.5)
     assert not auth.delegated(0.5)
     assert [a.reason for a in auth.drain_alerts()] == [RevocationReason.PILOT_TAKEOVER]
+
+
+def test_ground_grant_then_companion_takeoff_request_allowed() -> None:
+    from coyote.autonomy.action_gate import ActionKind as AK
+
+    auth = ground_authority(armed=False)
+    armed = replace(ON_GROUND, armed=True)
+    auth.observe(armed, False, 0.5)
+    takeoff = ActionRequest(AK.TAKEOFF, altitude_m=20.0)
+    assert evaluate_request(takeoff, auth.apply_to(armed, 0.5)).allowed
+    # Without a grant the same request is refused.
+    fresh = DelegationAuthority()
+    fresh.observe(armed, False, 0.5)
+    assert not evaluate_request(takeoff, fresh.apply_to(armed, 0.5)).allowed

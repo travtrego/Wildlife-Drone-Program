@@ -167,3 +167,83 @@ def test_goto_envelope_boundaries_are_inclusive() -> None:
 def test_invalid_advisory_limits_raise(limits) -> None:
     with pytest.raises(ValueError):
         evaluate_request(GOTO_OK, FLYING, limits)
+
+
+# --- Companion-requested takeoff (owner decision 2026-10-20, option 1) -------
+
+ARMED_ON_GROUND = replace(
+    FLYING, in_air=False, relative_altitude_m=0.0, battery_remaining_fraction=0.95
+)
+TAKEOFF = ActionRequest(ActionKind.TAKEOFF, altitude_m=20.0)
+
+
+@pytest.mark.parametrize("mode", ["HOLD", "MISSION", "hold"])
+def test_takeoff_allowed_when_armed_delegated_on_ground(mode) -> None:
+    decision = evaluate_request(TAKEOFF, replace(ARMED_ON_GROUND, flight_mode=mode))
+    assert decision.allowed
+    assert decision.recommended is None
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        replace(ARMED_ON_GROUND, armed=False),  # companion never arms
+        replace(ARMED_ON_GROUND, operator_delegated=False),
+        replace(ARMED_ON_GROUND, in_air=True),  # already flying
+        replace(ARMED_ON_GROUND, flight_mode="OFFBOARD"),
+        replace(ARMED_ON_GROUND, flight_mode="POSCTL"),
+        replace(ARMED_ON_GROUND, flight_mode="LAND"),
+        replace(ARMED_ON_GROUND, flight_mode="TAKEOFF"),
+        replace(ARMED_ON_GROUND, telemetry_age_s=1.5),
+        replace(ARMED_ON_GROUND, telemetry_age_s=math.nan),
+        replace(ARMED_ON_GROUND, battery_remaining_fraction=None),
+        replace(ARMED_ON_GROUND, battery_remaining_fraction=math.nan),
+        replace(ARMED_ON_GROUND, battery_remaining_fraction=0.79),
+        replace(ARMED_ON_GROUND, battery_remaining_fraction=95.0),
+    ],
+)
+def test_takeoff_rejected_when_preconditions_fail(snapshot) -> None:
+    decision = evaluate_request(TAKEOFF, snapshot)
+    assert decision.verdict is Verdict.REJECT
+    assert decision.reasons
+
+
+def test_takeoff_battery_boundary_is_inclusive() -> None:
+    snapshot = replace(ARMED_ON_GROUND, battery_remaining_fraction=0.80)
+    assert evaluate_request(TAKEOFF, snapshot).allowed
+
+
+@pytest.mark.parametrize("altitude", [4.9, 60.1, -5.0, math.nan, math.inf])
+def test_takeoff_altitude_outside_advisory_limits_rejected(altitude) -> None:
+    request = ActionRequest(ActionKind.TAKEOFF, altitude_m=altitude)
+    assert not evaluate_request(request, ARMED_ON_GROUND).allowed
+
+
+@pytest.mark.parametrize("altitude", [5.0, 60.0])
+def test_takeoff_altitude_boundaries_inclusive(altitude) -> None:
+    request = ActionRequest(ActionKind.TAKEOFF, altitude_m=altitude)
+    assert evaluate_request(request, ARMED_ON_GROUND).allowed
+
+
+def test_ground_still_rejects_every_non_takeoff_action() -> None:
+    for kind in (ActionKind.HOLD, ActionKind.RETURN_TO_LAUNCH, ActionKind.LAND):
+        assert not evaluate_request(ActionRequest(kind), ARMED_ON_GROUND).allowed
+    assert not evaluate_request(GOTO_OK, ARMED_ON_GROUND).allowed
+
+
+def test_no_arm_action_exists() -> None:
+    assert not any("arm" in kind.value for kind in ActionKind)
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        AdvisoryLimits(min_battery_fraction_for_takeoff=0.0),
+        AdvisoryLimits(min_battery_fraction_for_takeoff=1.1),
+        AdvisoryLimits(min_battery_fraction_for_takeoff=math.nan),
+        AdvisoryLimits(min_battery_fraction_for_goto=0.5, min_battery_fraction_for_takeoff=0.45),
+    ],
+)
+def test_invalid_takeoff_reserve_raises(limits) -> None:
+    with pytest.raises(ValueError):
+        evaluate_request(TAKEOFF, ARMED_ON_GROUND, limits)

@@ -4,7 +4,7 @@ Jetson-side code that **requests** mission actions. PX4/Pixhawk keeps stabilizat
 
 ## `delegation.py`
 
-Deterministic state machine that produces the gate's `operator_delegated` flag from R6 (owner decision 2026-10-18; see [DECISIONS.md](../DECISIONS.md) once PR #9 merges). A ground-station grant (with a strictly increasing sequence number, at most 2 s old) is accepted on the ground before takeoff (owner decision 2026-10-20) or in the air, while the latest observation is fresh, failsafe-free and not in a pilot or PX4 recovery mode. A ground grant does not let the companion arm or take off; the gate still requires armed and airborne. Any PX4 failsafe, unknown failsafe state, telemetry/observation gap over 1 s, pilot mode, RTL/LAND, disarm after the grant, landing after flying under the grant, bad clock or operator revoke clears it, so one grant covers at most one flight. Revocation is sticky: only a new grant restores it. Each revocation queues one `RevocationAlert` (reason, detail, time) for the ground station; delivery is the future adapter's job.
+Deterministic state machine that produces the gate's `operator_delegated` flag from R6 (owner decision 2026-10-18; see [DECISIONS.md](../DECISIONS.md) once PR #9 merges). A ground-station grant (with a strictly increasing sequence number, at most 2 s old) is accepted on the ground before takeoff (owner decision 2026-10-20) or in the air, while the latest observation is fresh, failsafe-free and not in a pilot or PX4 recovery mode. A ground grant never lets the companion arm. Once the operator has armed, the gate allows a companion `TAKEOFF` request (owner decision 2026-10-20, option 1); every other request still requires armed and airborne. Any PX4 failsafe, unknown failsafe state, telemetry/observation gap over 1 s, pilot mode, RTL/LAND, disarm after the grant, landing after flying under the grant, bad clock or operator revoke clears it, so one grant covers at most one flight. Revocation is sticky: only a new grant restores it. Each revocation queues one `RevocationAlert` (reason, detail, time) for the ground station; delivery is the future adapter's job.
 
 Evidence status: **unit-tested only** (`tests/test_coyote_delegation.py`). The 1 s / 2 s timings are development placeholders. The MAVLink source for `failsafe_active` and the grant command transport are not chosen; no MAVSDK wiring, SITL, bench or flight testing exists.
 
@@ -16,13 +16,14 @@ Deterministic, dependency-free gate that decides whether the companion computer 
 2. Pilot-controlled PX4 mode (`MANUAL`, `STABILIZED`, `ALTCTL`, `POSCTL`, `ACRO`, `RATTITUDE`) → reject everything; the companion yields.
 3. PX4 recovery mode (`RETURN_TO_LAUNCH`, `LAND`) → reject everything; never fight RTL or a failsafe.
 4. Mode not in `HOLD`/`MISSION`/`OFFBOARD`, or no explicit operator delegation → reject.
-5. Not armed and airborne → reject (arming/takeoff stay with the operator and PX4).
-6. De-escalating actions (`HOLD`, `RETURN_TO_LAUNCH`, `LAND`) → allow.
-7. `GOTO_LOCAL` → allow only inside the advisory altitude band and home radius and above the advisory battery reserve (battery must be a 0.0–1.0 fraction; values outside that range, such as MAVSDK's 0–100 percent passed straight in, are rejected); otherwise reject with a *recommended* action (`HOLD` or `RETURN_TO_LAUNCH`) that the gate never issues itself.
+5. `TAKEOFF` (owner decision 2026-10-20, operator on site): allowed only when armed by the operator, on the ground, delegated, in `HOLD`/`MISSION`, battery known and at or above the takeoff reserve (placeholder 80%), and climb altitude inside the advisory limits. The companion never arms; there is no arm action.
+6. Any other action when not armed and airborne → reject.
+7. De-escalating actions (`HOLD`, `RETURN_TO_LAUNCH`, `LAND`) → allow.
+8. `GOTO_LOCAL` → allow only inside the advisory altitude band and home radius and above the advisory battery reserve (battery must be a 0.0–1.0 fraction; values outside that range, such as MAVSDK's 0–100 percent passed straight in, are rejected); otherwise reject with a *recommended* action (`HOLD` or `RETURN_TO_LAUNCH`) that the gate never issues itself.
 
 ### Evidence status
 
 - **Unit-tested only** (`tests/test_coyote_action_gate.py`). Not yet wired to MAVSDK, not run in PX4 SITL, not bench- or flight-tested.
-- `AdvisoryLimits` defaults (60 m ceiling, 5 m floor, 150 m radius, 40 % goto reserve, 1 s telemetry age) are **model inputs / development placeholders**, not a validated Coyote envelope. They must be configured inside, never looser than, the PX4 geofence and battery failsafe parameters.
+- `AdvisoryLimits` defaults (60 m ceiling, 5 m floor, 150 m radius, 40 % goto reserve, 80 % takeoff reserve, 1 s telemetry age) are **model inputs / development placeholders**, not a validated Coyote envelope. They must be configured inside, never looser than, the PX4 geofence and battery failsafe parameters.
 - `operator_delegated` will be sourced from a **ground-station command** (owner decision 2026-10-18, [R6](../DECISIONS.md)). The future MAVSDK adapter must clear it on any PX4 failsafe, telemetry-link loss or pilot takeover, require the operator to re-send the command, and notify the ground station with the reason. Not implemented yet. PX4 flight mode alone cannot prove delegation — for example `HOLD` can be pilot- or failsafe-selected.
 - This gate does not implement wildlife stand-off distances, obstacle avoidance or animal identification.
