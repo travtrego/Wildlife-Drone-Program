@@ -2,6 +2,12 @@
 
 Jetson-side code that **requests** mission actions. PX4/Pixhawk keeps stabilization, geofence, battery and link-loss failsafes, RTL and pilot override.
 
+## `delegation.py`
+
+Deterministic state machine that produces the gate's `operator_delegated` flag from R6 (owner decision 2026-10-18; see [DECISIONS.md](../DECISIONS.md) once PR #9 merges). A ground-station grant (with a strictly increasing sequence number, at most 2 s old) is accepted on the ground before takeoff (owner decision 2026-10-20) or in the air, while the latest observation is fresh, failsafe-free and not in a pilot or PX4 recovery mode. A ground grant does not let the companion arm or take off; the gate still requires armed and airborne. Any PX4 failsafe, unknown failsafe state, telemetry/observation gap over 1 s, pilot mode, RTL/LAND, disarm after the grant, landing after flying under the grant, bad clock or operator revoke clears it, so one grant covers at most one flight. Revocation is sticky: only a new grant restores it. Each revocation queues one `RevocationAlert` (reason, detail, time) for the ground station; delivery is the future adapter's job.
+
+Evidence status: **unit-tested only** (`tests/test_coyote_delegation.py`). The 1 s / 2 s timings are development placeholders. The MAVLink source for `failsafe_active` and the grant command transport are not chosen; no MAVSDK wiring, SITL, bench or flight testing exists.
+
 ## `action_gate.py`
 
 Deterministic, dependency-free gate that decides whether the companion computer may forward a proposed action (`HOLD`, `GOTO_LOCAL`, `RETURN_TO_LAUNCH`, `LAND`) to PX4, given the latest telemetry snapshot. Checks run in a fixed order:
