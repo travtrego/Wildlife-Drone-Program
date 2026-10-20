@@ -1,7 +1,7 @@
 """Companion-side gate for Coyote mission action requests.
 
-The Jetson perception/mission layer proposes actions (hold, go to a local
-position, return to launch, land). Before any such request is forwarded to PX4,
+The Jetson perception/mission layer proposes actions (take off, hold, go to a
+local position, return to launch, land). Before any such request is forwarded to PX4,
 this module decides deterministically whether the companion computer should
 send it at all, given the latest PX4 telemetry snapshot.
 
@@ -13,6 +13,13 @@ Authority boundary
   to send requests while the pilot or an autopilot recovery mode owns the
   aircraft, when telemetry is stale or unknown, or when a request falls outside
   companion-side advisory limits that should sit inside the PX4 limits.
+* Takeoff (owner decision 2026-10-20, "option 1"): with the operator on site,
+  the companion may *request* a PX4 takeoff once the operator has armed the
+  vehicle and delegated authority on the ground. The companion never arms the
+  vehicle; there is no arm action. A takeoff request is refused unless the
+  vehicle is armed, on the ground, delegated, in HOLD/MISSION, has fresh
+  telemetry, a known battery at or above the takeoff reserve and a target
+  altitude inside the advisory limits.
 * A REJECT verdict may carry a ``recommended`` action. That is a proposal for
   the mission layer/operator; this module never issues it.
 
@@ -28,6 +35,7 @@ from enum import Enum
 
 
 class ActionKind(Enum):
+    TAKEOFF = "takeoff"
     HOLD = "hold"
     GOTO_LOCAL = "goto_local"
     RETURN_TO_LAUNCH = "return_to_launch"
@@ -46,6 +54,9 @@ PILOT_CONTROLLED_MODES = frozenset(
 AUTOPILOT_RECOVERY_MODES = frozenset({"RETURN_TO_LAUNCH", "LAND"})
 # Modes in which the operator has delegated mission actions to the companion.
 COMPANION_DELEGATED_MODES = frozenset({"HOLD", "MISSION", "OFFBOARD"})
+# Modes from which the companion may request a takeoff. OFFBOARD is excluded:
+# PX4 requires an active setpoint stream for it, which is not a ground state.
+COMPANION_TAKEOFF_MODES = frozenset({"HOLD", "MISSION"})
 
 
 class Verdict(Enum):
@@ -57,8 +68,9 @@ class Verdict(Enum):
 class ActionRequest:
     """An action proposed by the mission layer.
 
-    ``north_m``/``east_m``/``altitude_m`` are only used for ``GOTO_LOCAL`` and
-    are relative to the PX4 home position (altitude above home, positive up).
+    ``north_m``/``east_m``/``altitude_m`` are used for ``GOTO_LOCAL`` and are
+    relative to the PX4 home position (altitude above home, positive up).
+    ``TAKEOFF`` uses only ``altitude_m`` (the climb-to altitude above home).
     """
 
     kind: ActionKind
@@ -101,6 +113,7 @@ class AdvisoryLimits:
     min_altitude_m: float = 5.0
     max_distance_from_home_m: float = 150.0
     min_battery_fraction_for_goto: float = 0.40
+    min_battery_fraction_for_takeoff: float = 0.80
     max_telemetry_age_s: float = 1.0
 
     def validate(self) -> None:
@@ -109,6 +122,7 @@ class AdvisoryLimits:
             self.min_altitude_m,
             self.max_distance_from_home_m,
             self.min_battery_fraction_for_goto,
+            self.min_battery_fraction_for_takeoff,
             self.max_telemetry_age_s,
         )
         if not all(math.isfinite(v) for v in values):
@@ -122,6 +136,10 @@ class AdvisoryLimits:
             raise ValueError("max_distance_from_home_m must be positive")
         if not 0.0 < self.min_battery_fraction_for_goto < 1.0:
             raise ValueError("min_battery_fraction_for_goto must be between 0 and 1")
+        if not 0.0 < self.min_battery_fraction_for_takeoff <= 1.0:
+            raise ValueError("min_battery_fraction_for_takeoff must be in (0, 1]")
+        if self.min_battery_fraction_for_takeoff < self.min_battery_fraction_for_goto:
+            raise ValueError("takeoff battery reserve must not be below the goto reserve")
         if self.max_telemetry_age_s <= 0.0:
             raise ValueError("max_telemetry_age_s must be positive")
 
@@ -181,12 +199,16 @@ def evaluate_request(
     if not vehicle.operator_delegated:
         return _reject("operator has not delegated mission actions to companion")
 
-    # 5. This gate covers in-flight requests only; arming/takeoff stay with
-    #    the operator and PX4.
+    # 5. Takeoff is the only ground action. Arming always stays with the
+    #    operator; the companion only requests the climb once armed.
+    if request.kind is ActionKind.TAKEOFF:
+        return _evaluate_takeoff(request, vehicle, mode, limits)
+
+    # 6. Every other action is in-flight only.
     if not (vehicle.armed and vehicle.in_air):
         return _reject("vehicle is not armed and airborne")
 
-    # 6. De-escalating actions are allowed once the above hold.
+    # 7. De-escalating actions are allowed once the above hold.
     if request.kind in DE_ESCALATING_ACTIONS:
         return GateDecision(Verdict.ALLOW, (f"{request.kind.value} reduces mission risk",))
 
@@ -196,6 +218,46 @@ def evaluate_request(
     return _evaluate_goto(request, vehicle, limits)
 
 
+def _battery_problem(battery: float | None, reserve: float, purpose: str) -> str | None:
+    if battery is None or not math.isfinite(battery):
+        return f"battery state unknown; refusing to {purpose}"
+    # MAVSDK reports remaining_percent as 0-100; a value outside 0.0-1.0 means
+    # the caller passed the wrong units and the reserve check would never fire.
+    if not 0.0 <= battery <= 1.0:
+        return (
+            f"battery value {battery!r} outside 0.0-1.0 fraction "
+            f"(percent passed instead of fraction?); refusing to {purpose}"
+        )
+    if battery < reserve:
+        return f"battery {battery:.0%} below advisory {purpose} reserve {reserve:.0%}"
+    return None
+
+
+def _evaluate_takeoff(
+    request: ActionRequest, vehicle: VehicleSnapshot, mode: str, limits: AdvisoryLimits
+) -> GateDecision:
+    if vehicle.in_air:
+        return _reject("takeoff requested while already airborne")
+    if not vehicle.armed:
+        return _reject("vehicle is not armed; arming stays with the operator")
+    if mode not in COMPANION_TAKEOFF_MODES:
+        return _reject(f"takeoff not allowed from flight mode {mode}")
+    problem = _battery_problem(
+        vehicle.battery_remaining_fraction, limits.min_battery_fraction_for_takeoff, "take off"
+    )
+    if problem is not None:
+        return _reject(problem)
+    altitude = request.altitude_m
+    if not math.isfinite(altitude):
+        return _reject("takeoff altitude is not finite")
+    if not limits.min_altitude_m <= altitude <= limits.max_altitude_m:
+        return _reject(
+            f"takeoff altitude {altitude:.1f} m outside advisory "
+            f"[{limits.min_altitude_m:.1f}, {limits.max_altitude_m:.1f}] m"
+        )
+    return GateDecision(Verdict.ALLOW, (f"takeoff to {altitude:.1f} m within advisory limits",))
+
+
 def _evaluate_goto(
     request: ActionRequest, vehicle: VehicleSnapshot, limits: AdvisoryLimits
 ) -> GateDecision:
@@ -203,26 +265,11 @@ def _evaluate_goto(
     if not all(math.isfinite(v) for v in target):
         return _reject("goto target contains non-finite values")
 
-    battery = vehicle.battery_remaining_fraction
-    if battery is None or not math.isfinite(battery):
-        return _reject(
-            "battery state unknown; refusing to extend flight",
-            recommended=ActionKind.RETURN_TO_LAUNCH,
-        )
-    # MAVSDK reports remaining_percent as 0-100; a value outside 0.0-1.0 means
-    # the caller passed the wrong units and the reserve check would never fire.
-    if not 0.0 <= battery <= 1.0:
-        return _reject(
-            f"battery value {battery!r} outside 0.0-1.0 fraction "
-            "(percent passed instead of fraction?); refusing to extend flight",
-            recommended=ActionKind.RETURN_TO_LAUNCH,
-        )
-    if battery < limits.min_battery_fraction_for_goto:
-        return _reject(
-            f"battery {battery:.0%} below advisory goto reserve "
-            f"{limits.min_battery_fraction_for_goto:.0%}",
-            recommended=ActionKind.RETURN_TO_LAUNCH,
-        )
+    problem = _battery_problem(
+        vehicle.battery_remaining_fraction, limits.min_battery_fraction_for_goto, "extend flight"
+    )
+    if problem is not None:
+        return _reject(problem, recommended=ActionKind.RETURN_TO_LAUNCH)
 
     reasons: list[str] = []
     if not limits.min_altitude_m <= request.altitude_m <= limits.max_altitude_m:
