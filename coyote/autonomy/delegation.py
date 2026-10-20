@@ -24,10 +24,19 @@ Design choices (implementation, not new owner requirements)
 * **Unknown is unsafe.** Unknown failsafe state, invalid telemetry age,
   non-finite or backwards clock, or no observation within
   ``max_telemetry_age_s`` all revoke.
-* **Stricter than the R6 minimum.** PX4 RTL/LAND (commanded or failsafe),
-  disarm and landing also revoke, so delegation is scoped to one airborne
-  period. A grant is refused unless the latest observation is fresh, armed,
-  airborne, failsafe-free and not in a pilot or recovery mode.
+* **Grantable before takeoff (owner decision 2026-10-20).** A grant is
+  accepted on the ground (armed or disarmed) or in the air, provided the
+  latest observation is fresh, failsafe-free and not in a pilot or PX4
+  recovery mode. A pilot-controlled ground mode (e.g. POSCTL) still refuses
+  the grant, so the operator selects HOLD/MISSION before delegating.
+  Granting on the ground does NOT let the companion arm or take off: the
+  action gate still rejects every request unless the vehicle is armed and
+  airborne. It only removes the need to re-send the command once flying.
+* **One flight per grant.** PX4 RTL/LAND (commanded or failsafe) revoke.
+  Disarming after a grant (armed -> disarmed) and landing after the vehicle
+  has been airborne under this grant (in_air -> on ground) also revoke, so a
+  grant never carries over to a second flight. Arming after a disarmed grant
+  does not revoke. ``in_air`` while disarmed is treated as invalid input.
 * **Alerts are queued, not sent.** Each revocation transition enqueues exactly
   one :class:`RevocationAlert`. The future MAVSDK/GCS adapter drains and
   delivers them; alerts stay queued across a link outage until drained.
@@ -57,7 +66,7 @@ class RevocationReason(Enum):
     TELEMETRY_LINK_LOST = "telemetry_link_lost"
     PILOT_TAKEOVER = "pilot_takeover"
     PX4_RECOVERY_MODE = "px4_recovery_mode"
-    NOT_AIRBORNE = "not_airborne"
+    FLIGHT_ENDED = "flight_ended"
     INVALID_INPUT = "invalid_input"
 
 
@@ -110,6 +119,7 @@ class DelegationAuthority:
         self._last_snapshot: VehicleSnapshot | None = None
         self._last_failsafe: bool | None = None
         self._alerts: list[RevocationAlert] = []
+        self._flew_under_grant = False
 
     # ------------------------------------------------------------------ state
     def delegated(self, now_s: float) -> bool:
@@ -136,12 +146,18 @@ class DelegationAuthority:
         if not math.isfinite(now_s) or (self._last_obs_s is not None and now_s < self._last_obs_s):
             self._revoke(RevocationReason.INVALID_INPUT, "clock invalid or went backwards", now_s)
             return
+        previous = self._last_snapshot
         self._last_obs_s = now_s
         self._last_snapshot = snapshot
         self._last_failsafe = failsafe_active
         problem = self._unhealthy(snapshot, failsafe_active)
+        if problem is None and self._delegated:
+            problem = self._flight_ended(previous, snapshot)
         if problem is not None:
             self._revoke(*problem, now_s)
+            return
+        if self._delegated and snapshot.in_air:
+            self._flew_under_grant = True
 
     # -------------------------------------------------------------- commands
     def request_grant(self, command: GrantCommand, now_s: float) -> GrantResult:
@@ -172,6 +188,7 @@ class DelegationAuthority:
         if self._delegated:
             return GrantResult(True, "already delegated")
         self._delegated = True
+        self._flew_under_grant = bool(self._last_snapshot.in_air)
         return GrantResult(True, "delegation granted")
 
     def revoke_by_operator(self, now_s: float) -> None:
@@ -195,8 +212,17 @@ class DelegationAuthority:
             return RevocationReason.PILOT_TAKEOVER, f"pilot mode {mode}"
         if mode in AUTOPILOT_RECOVERY_MODES:
             return RevocationReason.PX4_RECOVERY_MODE, f"PX4 mode {mode}"
-        if not (snapshot.armed and snapshot.in_air):
-            return RevocationReason.NOT_AIRBORNE, "vehicle not armed and airborne"
+        if snapshot.in_air and not snapshot.armed:
+            return RevocationReason.INVALID_INPUT, "in_air reported while disarmed"
+        return None
+
+    def _flight_ended(
+        self, previous: VehicleSnapshot | None, snapshot: VehicleSnapshot
+    ) -> tuple[RevocationReason, str] | None:
+        if previous is not None and previous.armed and not snapshot.armed:
+            return RevocationReason.FLIGHT_ENDED, "vehicle disarmed"
+        if self._flew_under_grant and not snapshot.in_air:
+            return RevocationReason.FLIGHT_ENDED, "vehicle landed"
         return None
 
     def _check_observation_freshness(self, now_s: float) -> None:
@@ -217,4 +243,5 @@ class DelegationAuthority:
         if not self._delegated:
             return  # alert only on the delegated -> revoked transition
         self._delegated = False
+        self._flew_under_grant = False
         self._alerts.append(RevocationAlert(reason, detail, now_s))

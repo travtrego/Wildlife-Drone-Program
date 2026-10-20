@@ -20,6 +20,14 @@ FLYING = VehicleSnapshot(
     telemetry_age_s=0.1,
 )
 HOLD = ActionRequest(ActionKind.HOLD)
+ON_GROUND = VehicleSnapshot(
+    flight_mode="HOLD",
+    armed=False,
+    in_air=False,
+    relative_altitude_m=0.0,
+    battery_remaining_fraction=1.0,
+    telemetry_age_s=0.1,
+)
 
 
 def delegated_authority(t: float = 10.0, seq: int = 1) -> DelegationAuthority:
@@ -58,8 +66,9 @@ def test_grant_enables_gate() -> None:
             RevocationReason.PX4_RECOVERY_MODE,
         ),
         (replace(FLYING, flight_mode="LAND"), False, RevocationReason.PX4_RECOVERY_MODE),
-        (replace(FLYING, in_air=False), False, RevocationReason.NOT_AIRBORNE),
-        (replace(FLYING, armed=False), False, RevocationReason.NOT_AIRBORNE),
+        (replace(FLYING, in_air=False), False, RevocationReason.FLIGHT_ENDED),
+        (replace(FLYING, armed=False, in_air=False), False, RevocationReason.FLIGHT_ENDED),
+        (replace(FLYING, armed=False), False, RevocationReason.INVALID_INPUT),
     ],
 )
 def test_each_revocation_path_revokes_and_alerts_once(snapshot, failsafe, reason) -> None:
@@ -139,8 +148,9 @@ def test_old_future_or_invalid_grant_time_refused(issued_at) -> None:
         (FLYING, None),
         (replace(FLYING, flight_mode="ALTCTL"), False),
         (replace(FLYING, flight_mode="RETURN_TO_LAUNCH"), False),
-        (replace(FLYING, armed=True, in_air=False), False),
         (replace(FLYING, telemetry_age_s=2.0), False),
+        (replace(ON_GROUND, flight_mode="POSCTL"), False),
+        (replace(FLYING, armed=False), False),
     ],
 )
 def test_grant_refused_when_vehicle_not_eligible(snapshot, failsafe) -> None:
@@ -186,3 +196,67 @@ def test_alerts_queue_until_drained() -> None:
 def test_invalid_config_rejected(config) -> None:
     with pytest.raises(ValueError):
         DelegationAuthority(config)
+
+
+# --- Pre-takeoff grants (owner decision 2026-10-20) -------------------------
+
+
+def ground_authority(armed: bool = False) -> DelegationAuthority:
+    auth = DelegationAuthority()
+    auth.observe(replace(ON_GROUND, armed=armed), False, 0.0)
+    assert auth.request_grant(GrantCommand(1, 0.0), 0.0).accepted
+    return auth
+
+
+@pytest.mark.parametrize("armed", [False, True])
+def test_grant_accepted_on_ground_before_takeoff(armed) -> None:
+    auth = ground_authority(armed)
+    assert auth.delegated(0.0)
+    assert auth.drain_alerts() == ()
+
+
+def test_ground_grant_does_not_let_gate_allow_requests_on_ground() -> None:
+    auth = ground_authority(armed=True)
+    snap = auth.apply_to(replace(ON_GROUND, armed=True), 0.0)
+    assert snap.operator_delegated
+    assert not evaluate_request(HOLD, snap).allowed
+
+
+def test_ground_grant_carries_through_arming_and_takeoff() -> None:
+    auth = ground_authority(armed=False)
+    auth.observe(replace(ON_GROUND, armed=True), False, 0.5)
+    assert auth.delegated(0.5)
+    auth.observe(FLYING, False, 1.0)
+    assert auth.delegated(1.0)
+    assert evaluate_request(HOLD, auth.apply_to(FLYING, 1.0)).allowed
+    assert auth.drain_alerts() == ()
+
+
+def test_landing_after_flight_ends_the_grant() -> None:
+    auth = ground_authority(armed=True)
+    auth.observe(FLYING, False, 1.0)
+    auth.observe(replace(FLYING, in_air=False), False, 2.0)
+    assert not auth.delegated(2.0)
+    assert [a.reason for a in auth.drain_alerts()] == [RevocationReason.FLIGHT_ENDED]
+
+
+def test_disarm_on_ground_after_grant_revokes() -> None:
+    auth = ground_authority(armed=True)
+    auth.observe(ON_GROUND, False, 0.5)
+    assert not auth.delegated(0.5)
+    assert [a.reason for a in auth.drain_alerts()] == [RevocationReason.FLIGHT_ENDED]
+
+
+def test_ground_grant_does_not_carry_into_second_flight() -> None:
+    auth = ground_authority(armed=True)
+    auth.observe(FLYING, False, 1.0)
+    auth.observe(replace(FLYING, in_air=False), False, 2.0)
+    auth.observe(FLYING, False, 3.0)  # takes off again without a new grant
+    assert not auth.delegated(3.0)
+
+
+def test_pilot_mode_on_ground_revokes_ground_grant() -> None:
+    auth = ground_authority(armed=True)
+    auth.observe(replace(ON_GROUND, armed=True, flight_mode="POSCTL"), False, 0.5)
+    assert not auth.delegated(0.5)
+    assert [a.reason for a in auth.drain_alerts()] == [RevocationReason.PILOT_TAKEOVER]
