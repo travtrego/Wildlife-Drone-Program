@@ -18,5 +18,5 @@ Deterministic, dependency-free gate that decides whether the companion computer 
 
 - **Unit-tested only** (`tests/test_coyote_action_gate.py`). Not yet wired to MAVSDK, not run in PX4 SITL, not bench- or flight-tested.
 - `AdvisoryLimits` defaults (60 m ceiling, 5 m floor, 150 m radius, 40 % goto reserve, 1 s telemetry age) are **model inputs / development placeholders**, not a validated Coyote envelope. They must be configured inside, never looser than, the PX4 geofence and battery failsafe parameters.
-- How `operator_delegated` is sourced (RC aux switch, GCS command, or other) is an **open owner/design decision**. PX4 flight mode alone cannot prove delegation — for example `HOLD` can be pilot- or failsafe-selected.
+- `operator_delegated` will be sourced from a **ground-station command** (owner decision 2026-10-18, [R6](../DECISIONS.md)). The future MAVSDK adapter must clear it on any PX4 failsafe, telemetry-link loss or pilot takeover, require the operator to re-send the command, and notify the ground station with the reason. Not implemented yet. PX4 flight mode alone cannot prove delegation — for example `HOLD` can be pilot- or failsafe-selected.
 - This gate does not implement wildlife stand-off distances, obstacle avoidance or animal identification.
