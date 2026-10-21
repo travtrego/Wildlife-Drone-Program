@@ -52,3 +52,7 @@ The planner rejects a plan instead of tightening it when:
 - altitudes leave the advisory band (survey and transition at or above the fixed-wing floor, at most 120 m).
 
 **Evidence status:** unit tests only (`tests/test_fighter_survey_plan.py`). Not wired to MAVSDK, not run in PX4 VTOL SITL, not bench- or flight-tested. `FighterModelInputs` (18 m/s cruise, 30° planning bank, 250 m forward / 200 m back transition) and `SurveyLimits` are **model inputs / development placeholders**, not measurements of this airframe or its PX4 parameters. Wind, climb, terrain, obstacles and energy are not modeled.
+
+[`mission/mission_items.py`](mission/mission_items.py) converts a checked plan into global *mission-item specs* (latitude/longitude, altitude above home, fly-through flag and an action named after MAVSDK `MissionItem.VehicleAction`: TAKEOFF, TRANSITION_TO_FW, NONE, TRANSITION_TO_MC, LAND). It uses a spherical azimuthal-equidistant projection in the form PX4's `MapProjection` uses (not compared numerically with a PX4 build), and refuses plans whose phase order is not takeoff → forward transition → fixed-wing waypoints → back transition → landing at home, plus non-finite, far (>10 km) or at/below-home intermediate points. It imports no MAVSDK, uploads nothing and opens no vehicle connection.
+
+**Evidence status:** unit tests only (`tests/test_fighter_mission_items.py`). How PX4 executes these actions on a VTOL (for example whether MAVSDK TAKEOFF becomes a VTOL takeoff) is unverified until a PX4 standard-VTOL SITL run.
