@@ -3,18 +3,17 @@
 ## Platform roles
 
 ### X500 V2 — reference / learning platform
-Purpose: establish the common robotics stack on a low-complexity multirotor before promoting code to larger aircraft.
+Purpose: establish the common multirotor flight layer (PX4 control, waypoint missions, telemetry and safety guards) on a low-complexity quad before promoting code to larger aircraft.
+
+Scope (owner decision 2026-10-21): waypoint autonomy only. No Jetson, perception or AI mission logic on the X500; those are developed for Coyote.
 
 Primary progression:
 1. Stock PX4 flight
 2. QGroundControl setup and logging
 3. MAVSDK Python control
 4. Telemetry and mission scripts
-5. Jetson companion computer
-6. ROS 2 integration
-7. Vision / perception
-8. Perception-driven autonomy
-9. Promotion of validated modules into `shared/`
+5. Autonomous waypoint missions
+6. Promotion of validated flight-layer modules into `shared/` for Coyote reuse
 
 ### Fighter 2430 VTOL — mapping / surveillance
 Purpose: long-endurance, wide-area mapping and surveillance using the shared autonomy stack while keeping VTOL/fixed-wing flight control on PX4.

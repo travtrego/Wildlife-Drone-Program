@@ -15,17 +15,17 @@ The X500 is the program's reference and learning aircraft. Keep the ARF propulsi
 - 915 MHz SiK telemetry
 
 ## Development sequence
+
+**Scope (owner decision 2026-10-21):** the X500 is a waypoint-autonomy aircraft only. It carries no Jetson and runs no perception or AI mission logic; that work is Coyote-only. The X500 proves the multirotor flight layer that Coyote reuses: PX4 takeoff, waypoint missions, landing and RTL, telemetry checks, mission upload/verification and the companion-request safety gate.
+
 1. Mechanical inspection and assembly
 2. Props-off avionics integration
 3. PX4 configuration
 4. Manual/reference flight
 5. QGroundControl logging and review
 6. MAVSDK Python takeoff / land / waypoint experiments
-7. Jetson integration
-8. ROS 2 integration
-9. Camera / perception experiments
-10. Perception-driven mission behaviors
-11. Promote stable modules to `shared/`
+7. Autonomous waypoint missions with logged acceptance criteria
+8. Promote stable flight-layer modules to `shared/`
 
 ## Flight-test rule
 No autonomy feature advances to the next stage until the previous stage has a reproducible test procedure and logged pass criteria.
