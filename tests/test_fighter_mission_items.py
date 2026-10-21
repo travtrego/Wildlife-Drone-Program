@@ -200,6 +200,17 @@ def test_waypoint_at_or_below_home_altitude_is_refused() -> None:
         build_mission_items(_replace(plan, items), HOME)
 
 
+def test_hand_edited_altitude_above_ceiling_is_refused() -> None:
+    plan = _plan()
+    items = list(plan.items)
+    items[4] = dataclasses.replace(items[4], altitude_m=200.0)
+    with pytest.raises(MissionExportError, match="exceeds 120 m"):
+        build_mission_items(_replace(plan, items), HOME)
+    # Exactly at the ceiling is allowed.
+    items[4] = dataclasses.replace(items[4], altitude_m=120.0)
+    assert build_mission_items(_replace(plan, items), HOME)
+
+
 def test_non_finite_item_is_refused() -> None:
     plan = _plan()
     items = list(plan.items)

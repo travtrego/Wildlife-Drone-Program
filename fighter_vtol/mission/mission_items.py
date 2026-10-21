@@ -43,6 +43,9 @@ EARTH_RADIUS_M = 6_371_000.0
 # keeps the flat local frame from being misused for long distances.
 MAX_PROJECTION_DISTANCE_M = 10_000.0
 MAX_ABS_HOME_LATITUDE_DEG = 80.0
+# Re-checked here so a hand-built or edited plan cannot bypass the planner's
+# ceiling; matches SurveyLimits' 120 m cap. PX4's geofence stays authoritative.
+MAX_RELATIVE_ALTITUDE_M = 120.0
 
 
 class MissionExportError(ValueError):
@@ -202,6 +205,13 @@ def check_plan_structure(items: tuple[PlanItem, ...] | list[PlanItem]) -> list[s
             reasons.append(f"VTOL {label} must be at home (0, 0)")
     if last.phase is Phase.VTOL_LAND and abs(last.altitude_m) > 1e-6:
         reasons.append("VTOL landing altitude must be 0 m above home")
+    for index, item in enumerate(items):
+        if item.altitude_m > MAX_RELATIVE_ALTITUDE_M:
+            reasons.append(
+                f"item {index} ({item.role}) altitude {item.altitude_m:.1f} m exceeds "
+                f"{MAX_RELATIVE_ALTITUDE_M:.0f} m above home"
+            )
+            break
     for index, item in enumerate(items[:-1]):
         if item.altitude_m <= 0.0:
             reasons.append(
