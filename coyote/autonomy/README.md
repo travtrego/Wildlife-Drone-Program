@@ -2,6 +2,12 @@
 
 Jetson-side code that **requests** mission actions. PX4/Pixhawk keeps stabilization, geofence, battery and link-loss failsafes, RTL and pilot override.
 
+## `telemetry.py`
+
+Dependency-free adapter between per-stream PX4 telemetry (as MAVSDK delivers it) and the gate. `TelemetryTracker` takes flight mode, armed, in-air, relative altitude and battery updates with monotonic timestamps and builds one `VehicleSnapshot` whose `telemetry_age_s` is the age of the **oldest** stream, so one silent stream makes the whole snapshot stale. A missing or malformed stream makes the age infinite (rejected). MAVSDK 3.x `remaining_percent` (0–100) is converted to the gate's 0.0–1.0 fraction here; out-of-range or non-finite values become unknown, never clamped. Out-of-order updates are dropped. `failsafe_active` is a separate input whose MAVLink source is still unchosen: until something reports it, or once it is older than 1 s (placeholder), it is `None` and the delegation authority refuses or revokes. `observe_vehicle` / `evaluate_companion_request` chain tracker → `DelegationAuthority` → `evaluate_request`; they send nothing to PX4.
+
+Evidence status: **unit-tested only** (`tests/test_coyote_telemetry.py`) against plain values and a stand-in enum; no MAVSDK subscription task, SITL, bench or flight testing exists.
+
 ## `delegation.py`
 
 Deterministic state machine that produces the gate's `operator_delegated` flag from R6 (owner decision 2026-10-18; see [DECISIONS.md](../DECISIONS.md) once PR #9 merges). A ground-station grant (with a strictly increasing sequence number, at most 2 s old) is accepted on the ground before takeoff (owner decision 2026-10-20) or in the air, while the latest observation is fresh, failsafe-free and not in a pilot or PX4 recovery mode. A ground grant never lets the companion arm. Once the operator has armed, the gate allows a companion `TAKEOFF` request (owner decision 2026-10-20, option 1); every other request still requires armed and airborne. Any PX4 failsafe, unknown failsafe state, telemetry/observation gap over 1 s, pilot mode, RTL/LAND, disarm after the grant, landing after flying under the grant, bad clock or operator revoke clears it, so one grant covers at most one flight. Revocation is sticky: only a new grant restores it. Each revocation queues one `RevocationAlert` (reason, detail, time) for the ground station; delivery is the future adapter's job.
