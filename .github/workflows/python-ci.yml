@@ -28,10 +28,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Ruff lint
-        run: ruff check shared simulation coyote fighter_vtol tests
+        run: ruff check shared simulation coyote fighter_vtol x500 tests
 
       - name: Compile Python sources
-        run: python -m compileall -q shared simulation coyote fighter_vtol
+        run: python -m compileall -q shared simulation coyote fighter_vtol x500
 
       - name: Unit tests
         run: pytest
