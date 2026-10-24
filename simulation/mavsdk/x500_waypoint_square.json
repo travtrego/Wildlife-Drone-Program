@@ -1,0 +1,9 @@
+{
+  "waypoints": [
+    {"north_m": 0.0,  "east_m": 0.0,  "relative_altitude_m": 10.0, "speed_m_s": 3.0, "is_fly_through": false},
+    {"north_m": 20.0, "east_m": 0.0,  "relative_altitude_m": 10.0, "speed_m_s": 3.0, "is_fly_through": true},
+    {"north_m": 20.0, "east_m": 20.0, "relative_altitude_m": 10.0, "speed_m_s": 3.0, "is_fly_through": true},
+    {"north_m": 0.0,  "east_m": 20.0, "relative_altitude_m": 10.0, "speed_m_s": 3.0, "is_fly_through": true},
+    {"north_m": 0.0,  "east_m": 0.0,  "relative_altitude_m": 10.0, "speed_m_s": 3.0, "is_fly_through": false}
+  ]
+}
