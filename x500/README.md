@@ -41,3 +41,5 @@ python -m simulation.mavsdk.waypoint_upload_check  # PX4 SITL gz_x500 must alrea
 ~~~
 
 **Evidence status:** unit tests with fake MAVSDK objects (`tests/test_x500_waypoint_mission.py`); conversion also checked against the MAVSDK-Python 3.17.2 `MissionItem`/protobuf classes without a vehicle. **Not yet run against PX4 SITL**, so the read-back tolerances and how PX4/MAVSDK return speed and fly-through on download are unobserved. No mission has been flown in SITL or on hardware.
+
+[`simulation/mavsdk/waypoint_mission_flight.py`](../simulation/mavsdk/waypoint_mission_flight.py) is the next SITL step: it flies the verified mission under the execution monitor and requests PX4 RTL only after completion or a monitor RTL recommendation with fresh telemetry. See [flight/README.md](flight/README.md). **Unit-tested against a fake vehicle only; not yet run against PX4 SITL.**
