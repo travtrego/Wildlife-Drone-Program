@@ -14,6 +14,12 @@ Deterministic state machine that produces the gate's `operator_delegated` flag f
 
 Evidence status: **unit-tested only** (`tests/test_coyote_delegation.py`). The 1 s / 2 s timings are development placeholders. The MAVLink source for `failsafe_active` and the grant command transport are not chosen; no MAVSDK wiring, SITL, bench or flight testing exists.
 
+## `ground_alerts.py`
+
+R6 requires the ground station to tell the operator, with the reason, whenever delegation is revoked. `DelegationAuthority.drain_alerts()` empties its queue, and revocations cluster around link failures, so draining straight into a send that fails would lose the alert. `GroundAlertOutbox` takes drained alerts and keeps each one, in revocation order, until the sender reports success; a failed send (False or an exception) leaves it at the head and waits `retry_interval_s` (placeholder 0.5 s) before retrying. The queue is bounded (`max_pending`, placeholder 16): overflow drops the oldest alert not currently being sent and sends a "N AUTONOMY ALERTS DROPPED" line first, so loss is visible. `format_status_text` produces an ASCII line of at most 50 characters (MAVLink `STATUSTEXT` size) such as `COYOTE AUTONOMY OFF: PX4 TELEMETRY LOST`, with a severity whose names match MAVSDK `server_utility.StatusTextType` (PX4 failsafe CRITICAL; operator revoke NOTICE; end of flight INFO; everything else WARNING). The full `detail` string stays in the local record. Transport is injected: `deliver(send, now)` for a synchronous sender, or `next_message` / `mark_sent` / `mark_failed` for an async MAVSDK task. "Sent" means the transport accepted it, not that the operator saw it; no ground-station acknowledgement is defined. Delivering an alert never restores delegation.
+
+Evidence status: **unit-tested only** (`tests/test_coyote_ground_alerts.py`). STATUSTEXT as the delivery path is an implementation choice; whether QGroundControl shows a companion-originated STATUSTEXT, and from which MAVLink component, is not observed. No MAVSDK task, SITL, bench or flight testing exists.
+
 ## `action_gate.py`
 
 Deterministic, dependency-free gate that decides whether the companion computer may forward a proposed action (`HOLD`, `GOTO_LOCAL`, `RETURN_TO_LAUNCH`, `LAND`) to PX4, given the latest telemetry snapshot. Checks run in a fixed order:
