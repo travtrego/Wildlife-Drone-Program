@@ -8,6 +8,14 @@ Dependency-free adapter between per-stream PX4 telemetry (as MAVSDK delivers it)
 
 Evidence status: **unit-tested only** (`tests/test_coyote_telemetry.py`) against plain values and a stand-in enum; no MAVSDK subscription task, SITL, bench or flight testing exists.
 
+## `vehicle_link.py`
+
+Connects the pieces above to MAVSDK and a clock. `subscribe_vehicle_telemetry` starts one **read-only** task per MAVSDK 3.x stream (flight mode, armed, in-air, position `relative_altitude_m`, battery `remaining_percent`) feeding `TelemetryTracker`; a stream that ends or raises is recorded in `stream_errors` and stops updating, so the oldest-stream age makes the snapshot stale. `watch_step` / `run_delegation_watch` run the periodic R6 tick: observe the vehicle (which revokes on a silent link even when no companion request is pending), move alerts into `GroundAlertOutbox`, then make at most one send attempt bounded by `send_timeout_s`. Observing comes before sending, so a slow ground link delays an alert, never a revocation. `mavsdk_status_text_sender` maps alert severity by name onto MAVSDK `server_utility.StatusTextType` (names checked against MAVSDK-Python 3.17.2 without a vehicle). Nothing here arms, takes off or changes mode; the only outbound traffic is a STATUSTEXT line.
+
+`WatchConfig` defaults (0.2 s tick, 1 s send timeout) are **model inputs / development placeholders**. Still open: the MAVLink source for `failsafe_active` (until chosen, every grant is refused) and the grant command transport.
+
+Evidence status: **unit-tested only** (`tests/test_coyote_vehicle_link.py`) with fake streams, clocks and senders. Not run against PX4 SITL: stream rates, whether a companion STATUSTEXT reaches and is shown by QGroundControl, and revocation latency on a real link are unobserved.
+
 ## `delegation.py`
 
 Deterministic state machine that produces the gate's `operator_delegated` flag from R6 (owner decision 2026-10-18; see [DECISIONS.md](../DECISIONS.md) once PR #9 merges). A ground-station grant (with a strictly increasing sequence number, at most 2 s old) is accepted on the ground before takeoff (owner decision 2026-10-20) or in the air, while the latest observation is fresh, failsafe-free and not in a pilot or PX4 recovery mode. A ground grant never lets the companion arm. Once the operator has armed, the gate allows a companion `TAKEOFF` request (owner decision 2026-10-20, option 1); every other request still requires armed and airborne. Any PX4 failsafe, unknown failsafe state, telemetry/observation gap over 1 s, pilot mode, RTL/LAND, disarm after the grant, landing after flying under the grant, bad clock or operator revoke clears it, so one grant covers at most one flight. Revocation is sticky: only a new grant restores it. Each revocation queues one `RevocationAlert` (reason, detail, time) for the ground station; delivery is the future adapter's job.
