@@ -5,11 +5,17 @@ listener (same guard as the smoke mission). Sequence:
 
 1. Check the waypoint file against the X500 advisory limits (model inputs).
 2. Connect, wait for position/home health, read PX4 home.
-3. Start read-only telemetry subscriptions, upload the mission and verify it by
+3. Preflight gate (``require_preflight_ready``): refuse, sending nothing, unless
+   fresh telemetry shows a disarmed vehicle on the ground, battery at or above
+   the companion minimum and every PX4 health flag, including ``is_armable``,
+   True. This keeps the script from replacing a mission on a vehicle that is
+   already armed or flying.
+4. Start read-only telemetry subscriptions, upload the mission and verify it by
    read-back (``upload_and_verify``).
-4. Arm (PX4 arming checks stay enabled) and request ``start_mission``.
-5. Run :class:`MissionExecutionMonitor` on the combined telemetry until it ends.
-6. Request ``RETURN_TO_LAUNCH`` only if :func:`follow_up_request` allows it
+5. Re-run the preflight gate, then arm (PX4 arming checks stay enabled) and
+   request ``start_mission``.
+6. Run :class:`MissionExecutionMonitor` on the combined telemetry until it ends.
+7. Request ``RETURN_TO_LAUNCH`` only if :func:`follow_up_request` allows it
    (mission completed, or the monitor recommended RTL, with fresh telemetry
    still showing an armed, airborne vehicle in MISSION/HOLD), then wait for
    landing. Any other outcome sends nothing: PX4 or the pilot owns the vehicle.
@@ -48,7 +54,8 @@ from x500.flight.mission_telemetry import (
     subscribe_mission_telemetry,
 )
 from x500.flight.monitor_settings import x500_sitl_monitor_settings
-from x500.flight.settings import X500_SITL_MISSION_LIMITS
+from x500.flight.preflight import PreflightLimits, require_preflight_ready
+from x500.flight.settings import X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
     MissionCheckError,
@@ -86,11 +93,17 @@ async def fly_waypoint_mission(
     clock: Callable[[], float] = time.monotonic,
     check_interval_s: float = CHECK_INTERVAL_S,
     landing_timeout_s: float = LANDING_TIMEOUT_S,
+    preflight_limits: PreflightLimits = X500_SITL_PREFLIGHT_LIMITS,
 ) -> FlightResult:
-    """Fly one verified mission on an already connected *simulated* vehicle."""
+    """Fly one verified mission on an already connected *simulated* vehicle.
+
+    Raises :class:`PreflightRefused` before upload, or before arm, if the
+    vehicle is not ready; nothing is sent in that case.
+    """
 
     await _wait_for_health(drone, health_timeout_s)
     home = await _read_home(drone, health_timeout_s)
+    await require_preflight_ready(drone, preflight_limits, health_timeout_s, clock)
     items = build_mission_items(waypoints, home, limits)
     settings = settings_for(len(items))
     monitor = MissionExecutionMonitor(settings)
@@ -99,6 +112,8 @@ async def fly_waypoint_mission(
     tasks = subscribe_mission_telemetry(drone, combiner, clock)
     try:
         await upload_and_verify(drone, items, home, mission_module)
+        # Upload/read-back takes time; check again immediately before arming.
+        await require_preflight_ready(drone, preflight_limits, health_timeout_s, clock)
         print(f"Mission of {len(items)} items verified; arming (PX4 checks enabled) ...")
         await drone.action.arm()
         await drone.mission.start_mission()

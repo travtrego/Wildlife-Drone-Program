@@ -1,9 +1,10 @@
 """PX4 SITL waypoint mission upload and read-back check (X500 flight layer).
 
 Simulation only. Connects to the loopback SITL endpoint (the same guard as the
-smoke mission), waits for position/home health, reads PX4 home, checks the
-waypoint file against the X500 advisory limits (model inputs), uploads the
-mission, downloads it back and compares every item.
+smoke mission), waits for position/home health, reads PX4 home, refuses unless
+the preflight gate shows a disarmed vehicle on the ground (so an active mission
+is never replaced), checks the waypoint file against the X500 advisory limits
+(model inputs), uploads the mission, downloads it back and compares every item.
 
 It never arms, starts the mission or sends a flight command. PASS means PX4
 accepted the mission and returned the same items within the read-back
@@ -15,11 +16,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 from pathlib import Path
 
 from shared.autonomy.sitl import SitlMissionConfig, load_sitl_config
 from simulation.mavsdk.smoke_mission import _wait_for_connection, _wait_for_health
-from x500.flight.settings import X500_SITL_MISSION_LIMITS
+from x500.flight.preflight import require_preflight_ready
+from x500.flight.settings import X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS
 from x500.flight.waypoint_mission import (
     HomePosition,
     LocalWaypoint,
@@ -88,6 +91,9 @@ async def run_upload_check(
     await _wait_for_health(drone, config.health_timeout_s)
     home = await _read_home(drone, config.health_timeout_s)
     print(f"Home {home.latitude_deg:.7f}, {home.longitude_deg:.7f}")
+    await require_preflight_ready(
+        drone, X500_SITL_PREFLIGHT_LIMITS, config.health_timeout_s, time.monotonic
+    )
 
     items = build_mission_items(waypoints, home, limits)
     count = await upload_and_verify(drone, items, home, mavsdk_mission)
