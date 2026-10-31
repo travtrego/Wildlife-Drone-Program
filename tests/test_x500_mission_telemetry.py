@@ -31,6 +31,7 @@ from x500.flight.mission_telemetry import (
     run_monitor,
     subscribe_mission_telemetry,
 )
+from x500.flight.preflight import REQUIRED_HEALTH_FLAGS, PreflightRefused
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
     MissionCheckError,
@@ -333,9 +334,13 @@ class FakeVehicle:
         self.mode, self.armed, self.in_air = Mode.HOLD, False, False
         self.current, self.plan, self.stall = 0, None, stall
         self.commands = []
-        ok = SimpleNamespace(is_global_position_ok=True, is_home_position_ok=True)
+        self.health = SimpleNamespace(**{flag: True for flag in REQUIRED_HEALTH_FLAGS})
+        self.battery_percent = 95.0
         self.telemetry = SimpleNamespace(
-            health=_gen(ok),
+            health=self._periodic(lambda: self.health),
+            battery=self._periodic(
+                lambda: SimpleNamespace(remaining_percent=self.battery_percent)
+            ),
             home=_gen(SimpleNamespace(latitude_deg=41.6, longitude_deg=-71.2)),
             flight_mode=self._periodic(lambda: self.mode),
             armed=self._periodic(lambda: self.armed),
@@ -467,3 +472,39 @@ def test_entry_point_refuses_out_of_limit_mission_before_connecting() -> None:
 def test_follow_up_reason_names_pilot_and_px4_modes() -> None:
     assert "pilot mode POSCTL" in follow_up_request(COMPLETED, latest("POSCTL"), 10.0, 1.0).reason
     assert "already in LAND" in follow_up_request(COMPLETED, latest("LAND"), 10.0, 1.0).reason
+
+
+# --- preflight gate in the SITL entry point ----------------------------------
+
+
+def test_fake_flight_refuses_airborne_vehicle_before_upload() -> None:
+    vehicle = FakeVehicle()
+    vehicle.armed, vehicle.in_air, vehicle.mode = True, True, Mode.MISSION
+    with pytest.raises(PreflightRefused, match="already armed"):
+        _fly(vehicle)
+    assert vehicle.plan is None  # the mission PX4 may be flying was not replaced
+    assert vehicle.commands == []
+
+
+def test_fake_flight_refuses_when_px4_not_armable() -> None:
+    vehicle = FakeVehicle()
+    vehicle.health = SimpleNamespace(
+        **{flag: flag != "is_armable" for flag in REQUIRED_HEALTH_FLAGS}
+    )
+    with pytest.raises(PreflightRefused, match="is_armable is False"):
+        _fly(vehicle)
+    assert vehicle.plan is None and vehicle.commands == []
+
+
+def test_fake_flight_rechecks_before_arm() -> None:
+    vehicle = FakeVehicle()
+    original_upload = vehicle.mission.upload_mission
+
+    async def upload_then_someone_arms(plan):
+        await original_upload(plan)
+        vehicle.armed = True  # e.g. operator armed from the ground station meanwhile
+
+    vehicle.mission.upload_mission = upload_then_someone_arms
+    with pytest.raises(PreflightRefused, match="already armed"):
+        _fly(vehicle)
+    assert vehicle.commands == []

@@ -20,6 +20,8 @@ A clean checkout/new virtual environment reproduced the workflow using installed
 
 Since PR #6 merged, default-branch smoke code binds explicitly to loopback, waits for airborne/altitude telemetry before loitering and fails on ended telemetry streams. The Coyote action gate (PR #8) is unit-tested only. The X500 waypoint upload/read-back check (`x500/flight/waypoint_mission.py`) is unit-tested only; it has not been run against PX4 SITL. The monitored SITL waypoint flight (`simulation/mavsdk/waypoint_mission_flight.py`, `x500/flight/mission_telemetry.py`) is likewise unit-tested against a fake vehicle only. The Coyote MAVSDK telemetry pumps and R6 delegation watch (`coyote/autonomy/vehicle_link.py`) are unit-tested with fake streams and senders only.
 
+The preflight gate those X500 scripts run before upload and arm (`x500/flight/preflight.py`) is unit-tested only.
+
 Even explicit loopback is a network restriction, not proof that a vehicle is simulated. Do not bridge real hardware into this endpoint.
 
 ## Future evidence records

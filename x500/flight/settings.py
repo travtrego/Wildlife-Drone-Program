@@ -9,6 +9,7 @@ pass its own limits to the same code.
 
 from __future__ import annotations
 
+from x500.flight.preflight import PreflightLimits
 from x500.flight.waypoint_mission import MultirotorMissionLimits
 
 X500_SITL_MISSION_LIMITS = MultirotorMissionLimits(
@@ -18,3 +19,14 @@ X500_SITL_MISSION_LIMITS = MultirotorMissionLimits(
     max_speed_m_s=5.0,
     max_waypoints=20,
 )
+
+# Companion-side readiness gate before upload/arm (x500.flight.preflight).
+# Placeholders: 40 % (owner choice, 2026-10-31) is not a reserve calculation;
+# it must stay at or above the PX4 battery failsafe thresholds. How the PX4
+# SITL battery simulator reports charge while disarmed (SIM_BAT_* parameters)
+# is unobserved here.
+X500_SITL_PREFLIGHT_LIMITS = PreflightLimits(
+    min_battery_fraction=0.4,
+    max_telemetry_age_s=2.0,
+)
+X500_SITL_PREFLIGHT_LIMITS.validate()
