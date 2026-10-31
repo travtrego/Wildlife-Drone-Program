@@ -22,8 +22,9 @@ X500_SITL_MISSION_LIMITS = MultirotorMissionLimits(
 
 # Companion-side readiness gate before upload/arm (x500.flight.preflight).
 # Placeholders: 40 % (owner choice, 2026-10-31) is not a reserve calculation;
-# it must stay at or above the PX4 battery failsafe thresholds. How the PX4 SITL battery simulator reports
-# charge while disarmed (SIM_BAT_* parameters) is unobserved here.
+# it must stay at or above the PX4 battery failsafe thresholds. How the PX4
+# SITL battery simulator reports charge while disarmed (SIM_BAT_* parameters)
+# is unobserved here.
 X500_SITL_PREFLIGHT_LIMITS = PreflightLimits(
     min_battery_fraction=0.4,
     max_telemetry_age_s=2.0,
