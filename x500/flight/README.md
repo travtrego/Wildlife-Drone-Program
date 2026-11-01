@@ -20,7 +20,7 @@ Deterministic classifier for a waypoint mission that PX4 is already flying. It n
 
 Terminal outcomes are sticky; create a new monitor per attempt. X500 timing values in [`monitor_settings.py`](monitor_settings.py) (10 s start, 60 s per item, 300 s mission, 2 s telemetry age) are **model inputs / SITL development placeholders**, not measurements or PX4 parameters.
 
-**Evidence status:** unit-tested only (`tests/test_x500_mission_monitor.py`); mode names checked against MAVSDK-Python 3.17.2 `FlightMode` without a vehicle. **Not run against PX4 SITL.** Unobserved in SITL: which mode PX4/MAVSDK reports during the mission's takeoff and after the last item, and the exact `mission_progress` values at start and completion. No hardware, bench or flight evidence.
+**Evidence status:** unit-tested only (`tests/test_x500_mission_monitor.py`); mode names checked against MAVSDK-Python 3.17.2 `FlightMode` without a vehicle. One nominal SITL run reached `COMPLETED` at item 5/5 ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)). The specific modes reported during takeoff and after the last item, and the `mission_progress` values at start, were not printed and remain unobserved. No hardware, bench or flight evidence.
 
 ## `preflight.py`
 
@@ -28,7 +28,7 @@ Companion-side readiness gate run by both SITL mission scripts before upload, an
 
 X500 values in [`settings.py`](settings.py) (40 % battery, set by the owner on 2026-10-31; 2 s telemetry age) are **model inputs / SITL development placeholders**; the battery figure is not a reserve calculation and must stay at or above the PX4 battery failsafe thresholds.
 
-**Evidence status:** unit-tested only (`tests/test_x500_preflight.py`, plus gate cases in `tests/test_x500_mission_telemetry.py`). MAVSDK-Python 3.17.2 `Health`/`Battery` field names and the 0-100 `remaining_percent` scale were checked against the installed package without a vehicle. **Not run against PX4 SITL.** Unobserved: whether PX4 SITL reports `is_armable` True before the first arm request, and how the SITL battery simulator reports charge while disarmed.
+**Evidence status:** unit-tested only (`tests/test_x500_preflight.py`, plus gate cases in `tests/test_x500_mission_telemetry.py`). MAVSDK-Python 3.17.2 `Health`/`Battery` field names and the 0-100 `remaining_percent` scale were checked against the installed package without a vehicle. In one SITL run it passed in both scripts and before arm, so PX4 SITL reported every flag True and battery ≥ 40 % once home was valid ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)). Refusal paths are unit-tested only.
 
 ## `mission_telemetry.py`
 
@@ -42,4 +42,4 @@ Connects the monitor to MAVSDK. `MissionTelemetryCombiner` keeps the latest flig
 python -m simulation.mavsdk.waypoint_mission_flight
 ~~~
 
-**Evidence status:** unit-tested only (`tests/test_x500_mission_telemetry.py`), with fake clocks and an in-memory fake vehicle. **Not run against PX4 SITL.** Unobserved: whether PX4 starts this mission (no explicit takeoff item) from the ground, which mode MAVSDK reports during the mission takeoff (if it is `TAKEOFF`, the monitor ends the attempt with `START_TIMEOUT` or `MODE_CHANGED`), whether `mission_progress` is reported at start or only on change (if not reported, the attempt ends `START_TIMEOUT` with no command), and the rate of the mode/armed/in-air streams relative to the 2 s age placeholder. The 0.2 s check interval and 120 s landing timeout are SITL placeholders.
+**Evidence status:** unit-tested only (`tests/test_x500_mission_telemetry.py`), with fake clocks and an in-memory fake vehicle. **One nominal SITL run passed** ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)): PX4 started the mission from the ground without a takeoff item, the monitor completed, RTL was requested and the vehicle landed. Still unobserved: the exact modes and stream rates (the run only shows they fit the current placeholders). Stall, takeover and stale-telemetry paths are unit-tested only. The 0.2 s check interval and 120 s landing timeout are SITL placeholders.

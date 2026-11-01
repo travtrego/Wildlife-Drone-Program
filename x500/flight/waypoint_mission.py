@@ -31,9 +31,9 @@ Evidence status
 ---------------
 Unit-tested with fake MAVSDK objects only. The MAVSDK conversion follows the
 ``mavsdk.mission.MissionItem`` constructor of MAVSDK-Python 3.17.2 (the version
-recorded for the September 3 SITL runs), read from its source. Whether PX4 SITL
-returns the uploaded items within the read-back tolerances is **not yet
-observed**: no PX4 SITL run backs this module.
+recorded for the September 3 SITL runs), read from its source. One PX4 SITL run
+(2026-11-01, docs/SITL_VALIDATION_2026-11-01.md) returned all 5 items of the
+square mission within the read-back tolerances; no hardware evidence.
 
 Projection
 ----------

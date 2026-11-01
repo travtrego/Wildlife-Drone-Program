@@ -21,7 +21,8 @@ listener (same guard as the smoke mission). Sequence:
    landing. Any other outcome sends nothing: PX4 or the pilot owns the vehicle.
 
 PASS means the monitor saw the mission complete and the vehicle landed after
-the RTL request, in simulation. **Not yet run against PX4 SITL.**
+the RTL request, in simulation. One nominal PX4 SITL pass is recorded in
+docs/SITL_VALIDATION_2026-11-01.md; failure paths are unit-tested only.
 """
 
 from __future__ import annotations
