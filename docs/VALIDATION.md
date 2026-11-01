@@ -19,7 +19,7 @@ A clean checkout/new virtual environment reproduced the workflow using installed
 
 ## Current implementation boundary
 
-Since PR #6 merged, default-branch smoke code binds explicitly to loopback, waits for airborne/altitude telemetry before loitering and fails on ended telemetry streams. The Coyote action gate (PR #8) is unit-tested only. The X500 waypoint upload/read-back check, the monitored waypoint flight and the preflight gate (`x500/flight/`, `simulation/mavsdk/waypoint_*.py`) passed one nominal headless SITL run on 2026-11-01 ([record](SITL_VALIDATION_2026-11-01.md)); their failure paths are unit-tested only. The Coyote MAVSDK telemetry pumps and R6 delegation watch (`coyote/autonomy/vehicle_link.py`) are unit-tested with fake streams and senders only.
+Since PR #6 merged, default-branch smoke code binds explicitly to loopback, waits for airborne/altitude telemetry before loitering and fails on ended telemetry streams. The Coyote action gate (PR #8) is unit-tested only. The X500 waypoint upload/read-back check, the monitored waypoint flight and the preflight gate (`x500/flight/`, `simulation/mavsdk/waypoint_*.py`) passed one nominal headless SITL run on 2026-11-01 ([record](SITL_VALIDATION_2026-11-01.md)); their failure paths are unit-tested only. The Coyote MAVSDK telemetry pumps and R6 delegation watch (`coyote/autonomy/vehicle_link.py`) are unit-tested with fake streams and senders only. The candidate HEARTBEAT `system_status` failsafe source (`coyote/autonomy/failsafe_source.py`) is unit-tested with fake messages only; its PX4 mapping is unobserved.
 
 Even explicit loopback is a network restriction, not proof that a vehicle is simulated. Do not bridge real hardware into this endpoint.
 

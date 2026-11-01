@@ -41,8 +41,9 @@ Design choices (implementation, not new owner requirements)
   one :class:`RevocationAlert`. The future MAVSDK/GCS adapter drains and
   delivers them; alerts stay queued across a link outage until drained.
 
-Open items: which MAVLink/MAVSDK signal provides ``failsafe_active`` and how
-the grant command reaches the Jetson are not chosen yet. Timing defaults are
+Open items: ``failsafe_active`` has only a candidate, unobserved source
+(``failsafe_source.py``), and how the grant command reaches the Jetson is not
+chosen yet. Timing defaults are
 development placeholders (model inputs), not tested values.
 """
 

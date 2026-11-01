@@ -33,10 +33,11 @@ Implementation choices (not owner requirements)
 * **One send attempt per tick, bounded by ``send_timeout_s``.** A hung
   transport cannot stall the tick loop for longer than the timeout; a timeout
   or exception counts as a failed send and the outbox's retry spacing applies.
-* **Failsafe state is still not sourced here.** Which MAVLink signal provides
-  ``failsafe_active`` remains open (see ``delegation.py``). Without a source,
-  ``TelemetryTracker.failsafe_active`` returns ``None`` and the authority
-  refuses every grant, which is the conservative outcome.
+* **Failsafe state is not sourced here.** A candidate source (HEARTBEAT
+  ``system_status``) lives in ``failsafe_source.py`` and must be started
+  separately. Without a source, ``TelemetryTracker.failsafe_active`` returns
+  ``None`` and the authority refuses every grant, which is the conservative
+  outcome.
 * **Grant transport is out of scope.** How the operator's grant command
   reaches the Jetson is not chosen; callers pass grants to
   ``DelegationAuthority.request_grant`` themselves.

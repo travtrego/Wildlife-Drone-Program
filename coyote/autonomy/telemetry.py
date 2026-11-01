@@ -24,8 +24,8 @@ Conservative rules (implementation choices, not new owner requirements)
 * **Out-of-order updates are dropped.** An update older than the stream's last
   accepted update is ignored, so a delayed message cannot make state look
   fresher or roll it back.
-* **Failsafe state is a separate input.** Which MAVLink/MAVSDK signal provides
-  ``failsafe_active`` is still an open choice (see ``delegation.py``). Until a
+* **Failsafe state is a separate input.** A candidate source (PX4 HEARTBEAT
+  ``system_status``) is in ``failsafe_source.py``; it is unobserved. Until a
   source calls :meth:`TelemetryTracker.update_failsafe`, or when its value is
   older than ``max_failsafe_age_s``, :meth:`TelemetryTracker.failsafe_active`
   returns ``None`` and the delegation authority treats that as unsafe.
