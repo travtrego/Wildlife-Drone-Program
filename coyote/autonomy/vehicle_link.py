@@ -18,7 +18,7 @@ This module provides those three missing links:
 * :func:`subscribe_vehicle_telemetry` starts one **read-only** task per MAVSDK
   stream (flight mode, armed, in-air, position, battery) feeding the tracker.
   A stream that ends or raises is recorded in ``stream_errors`` and simply
-  stops updating; the tracker's oldest-stream age then makes the snapshot
+  stops updating; once it passes its own staleness limit the snapshot is
   stale and the authority revokes with ``TELEMETRY_LINK_LOST``.
 * :func:`watch_step` / :func:`run_delegation_watch` run the periodic R6 tick:
   observe the vehicle (may revoke and queue an alert), move alerts into the
