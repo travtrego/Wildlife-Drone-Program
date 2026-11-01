@@ -8,6 +8,7 @@ This index separates source availability, automated checks, simulator runtime an
 | Latest inspected main CI | [Run 38680942078](https://github.com/travtrego/Wildlife-Drone-Program/actions/runs/38680942078), `4ded919` | Successful lint, compile and unit workflow | Workflow does not run PX4/Gazebo or MAVSDK runtime |
 | Recorded SITL validation | [Immutable September 3 report](https://github.com/travtrego/Wildlife-Drone-Program/blob/2cb5102ae6bbae4c927ae33f87a21d0abc249a27/docs/SITL_VALIDATION_2026-09-03.md) | Three successful headless X500 runs; commands, versions, warnings and ULog checksums | Existing prerequisites/PX4 build on one laptop |
 | Validated branch CI | [Run 33792886591](https://github.com/travtrego/Wildlife-Drone-Program/actions/runs/33792886591), `2cb5102` | Successful lint, compile and 13 tests | Separate from live SITL evidence; PR #6 merged October 18 as `56872a8` |
+| X500 waypoint mission SITL | [November 1 record](SITL_VALIDATION_2026-11-01.md), `7ef6c3d` | Upload/read-back and monitored waypoint mission (preflight gate, start, completion, RTL, landing) passed once in headless `gz_x500` | One nominal run on the same laptop; PX4 revision and ULog checksum not recorded; failure paths not exercised in SITL |
 | X500 / Fighter / Coyote physical qualification | No completed acceptance record in inspected repository | Nothing yet established here | Ownership, installation, fit, power, endurance and real flight require their own records |
 
 ## Recorded runtime environment
@@ -18,9 +19,7 @@ A clean checkout/new virtual environment reproduced the workflow using installed
 
 ## Current implementation boundary
 
-Since PR #6 merged, default-branch smoke code binds explicitly to loopback, waits for airborne/altitude telemetry before loitering and fails on ended telemetry streams. The Coyote action gate (PR #8) is unit-tested only. The X500 waypoint upload/read-back check (`x500/flight/waypoint_mission.py`) is unit-tested only; it has not been run against PX4 SITL. The monitored SITL waypoint flight (`simulation/mavsdk/waypoint_mission_flight.py`, `x500/flight/mission_telemetry.py`) is likewise unit-tested against a fake vehicle only. The Coyote MAVSDK telemetry pumps and R6 delegation watch (`coyote/autonomy/vehicle_link.py`) are unit-tested with fake streams and senders only.
-
-The preflight gate those X500 scripts run before upload and arm (`x500/flight/preflight.py`) is unit-tested only.
+Since PR #6 merged, default-branch smoke code binds explicitly to loopback, waits for airborne/altitude telemetry before loitering and fails on ended telemetry streams. The Coyote action gate (PR #8) is unit-tested only. The X500 waypoint upload/read-back check, the monitored waypoint flight and the preflight gate (`x500/flight/`, `simulation/mavsdk/waypoint_*.py`) passed one nominal headless SITL run on 2026-11-01 ([record](SITL_VALIDATION_2026-11-01.md)); their failure paths are unit-tested only. The Coyote MAVSDK telemetry pumps and R6 delegation watch (`coyote/autonomy/vehicle_link.py`) are unit-tested with fake streams and senders only.
 
 Even explicit loopback is a network restriction, not proof that a vehicle is simulated. Do not bridge real hardware into this endpoint.
 

@@ -31,7 +31,8 @@ Evidence status
 Unit-tested only. MAVSDK-Python 3.17.2 ``telemetry.Health`` and
 ``telemetry.Battery`` field names (and the 0-100 scale of
 ``Battery.remaining_percent``) were checked against the installed package
-without a vehicle. **Not run against PX4 SITL.**
+without a vehicle. Passed in one nominal PX4 SITL run (2026-11-01); refusal
+paths are unit-tested only.
 """
 
 from __future__ import annotations
