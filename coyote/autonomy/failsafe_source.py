@@ -3,14 +3,18 @@
 The R6 delegation authority refuses every grant while ``failsafe_active`` is
 unknown, and until now nothing supplied it, so no grant was possible even in
 SITL. This module is a **candidate** source, chosen as an implementation step
-(not an owner requirement) so that SITL revocation tests become possible. It
-has not been observed against PX4.
+(not an owner requirement) so that SITL revocation tests become possible. One
+PX4 SITL session (2026-11-01, PX4 ``6041c961``) observed ``CRITICAL`` (5)
+during a GPS-loss failsafe, 3/4 when disarmed/armed, 0 on the ground while
+preflight checks failed, 1 Hz heartbeats and integer enum fields; see
+``docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md``. Other failsafe types and
+PX4 builds are not observed.
 
 Why HEARTBEAT ``system_status``
 -------------------------------
 PX4 reports its overall state in every HEARTBEAT as a MAVLink ``MAV_STATE``.
-As we read PX4's HEARTBEAT stream source (to be confirmed for the PX4 build
-used in SITL), an active failsafe is reported as ``MAV_STATE_CRITICAL`` and
+As we read PX4's HEARTBEAT stream source (CRITICAL confirmed once in SITL,
+see above), an active failsafe is reported as ``MAV_STATE_CRITICAL`` and
 flight termination as ``MAV_STATE_FLIGHT_TERMINATION``; a healthy vehicle is
 ``MAV_STATE_STANDBY`` (disarmed) or ``MAV_STATE_ACTIVE`` (armed). MAVSDK 3.x
 does not expose this field in its telemetry plugin, but its ``mavlink_direct``
@@ -38,7 +42,7 @@ failsafe age would flip to unknown between heartbeats. Use
 :data:`HEARTBEAT_TRACKER_CONFIG` (2.5 s, tolerating one late heartbeat) with
 this source. Link-loss detection does not depend on it: the five telemetry
 streams still revoke after the authority's 1 s age limit. Both numbers are
-MODEL INPUTS / development placeholders; the real heartbeat rate is unobserved.
+MODEL INPUTS / development placeholders (1 Hz observed once in SITL).
 
 Read-only: nothing here sends a MAVLink message or commands the vehicle.
 Unit-tested only.
@@ -96,7 +100,7 @@ class HeartbeatSourceConfig:
 
 
 def _enum_value(raw: object, table: Mapping[str, int]) -> int | None:
-    """Accept a MAVLink enum as an int or as its name (JSON form is unobserved)."""
+    """Accept a MAVLink enum as an int or as its name (SITL showed integers)."""
 
     if isinstance(raw, bool):
         return None

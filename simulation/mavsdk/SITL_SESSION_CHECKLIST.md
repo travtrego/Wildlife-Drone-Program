@@ -54,6 +54,8 @@ Run the mission with `python -m simulation.mavsdk.waypoint_mission_flight` in te
 
 For each run, copy the full terminal 2 output and the PX4 lines from terminal 1 around the event.
 
+Learned 2026-11-01: PX4 refuses `commander arm`/`takeoff` from the shell unless a MAVSDK client (ground station) is connected, so A1/A2 need the watch script or QGC running; POSCTL is refused without RC. See the [afternoon record](../../docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md).
+
 Not covered: per-item stall and mission timeout (no easy way to induce them without changing code), and a real RC pilot takeover.
 
 ## Part B: Coyote R6 watch (new script; sends no flight commands)

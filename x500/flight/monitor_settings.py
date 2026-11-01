@@ -21,6 +21,9 @@ def x500_sitl_monitor_settings(expected_item_count: int) -> MonitorSettings:
         max_item_time_s=60.0,  # placeholder: per-item budget incl. takeoff climb
         max_mission_time_s=300.0,  # placeholder: whole mission, well under SITL battery
         max_telemetry_age_s=2.0,  # placeholder: companion-side silence before giving up
+        # placeholder: PX4 reported HOLD before final-item progress in SITL on
+        # 2026-11-01; allow ~3 progress updates at the observed 1 Hz telemetry
+        completion_grace_s=3.0,
     )
     settings.validate()
     return settings

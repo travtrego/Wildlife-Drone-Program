@@ -122,7 +122,11 @@ async def fly_waypoint_mission(
         monitor.start(started_at)
         print("Mission start requested; monitoring ...")
         status = await run_monitor(monitor, combiner, started_at, clock, check_interval_s)
-        print(f"Monitor: {status.state.value} {status.reason or ''} {status.detail}".rstrip())
+        reason = status.reason.value if status.reason else ""
+        print(
+            f"Monitor: {status.state.value} {reason} {status.detail} "
+            f"(item {status.current_item}/{status.total_items})"
+        )
 
         follow = follow_up_request(status, combiner.sample(), clock(), settings.max_telemetry_age_s)
         landed = False

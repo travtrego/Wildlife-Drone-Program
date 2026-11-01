@@ -88,6 +88,9 @@ class MonitorSettings:
     max_item_time_s: float
     max_mission_time_s: float
     max_telemetry_age_s: float
+    # How long PX4 may report HOLD on the last item before mission progress
+    # reports completion. 0 disables the grace (HOLD ends the attempt at once).
+    completion_grace_s: float = 0.0
 
     def validate(self) -> None:
         if isinstance(self.expected_item_count, bool) or not isinstance(
@@ -105,6 +108,8 @@ class MonitorSettings:
             value = getattr(self, name)
             if not _is_finite_number(value) or value <= 0:
                 raise ValueError(f"{name} must be a positive finite number")
+        if not _is_finite_number(self.completion_grace_s) or self.completion_grace_s < 0:
+            raise ValueError("completion_grace_s must be a non-negative finite number")
         if self.max_item_time_s > self.max_mission_time_s:
             raise ValueError("max_item_time_s must not exceed max_mission_time_s")
 
@@ -172,6 +177,7 @@ class MissionExecutionMonitor:
         self._item: int | None = None
         self._item_since: float | None = None
         self._was_airborne = False
+        self._final_hold_since: float | None = None
 
     @property
     def status(self) -> MissionStatus:
@@ -266,10 +272,32 @@ class MissionExecutionMonitor:
             )
             return self._status
 
+        if (
+            mode in COMPLETION_MODES
+            and mode != MISSION_MODE
+            and current == total - 1
+            and self._was_airborne
+            and sample.in_air
+            and self._settings.completion_grace_s > 0
+        ):
+            # SITL 2026-11-01: PX4 switched to HOLD ("Mission finished,
+            # loitering") before mission progress reported the last item
+            # reached. Wait briefly for progress instead of ending at once;
+            # check() ends the attempt as MODE_CHANGED if it never arrives.
+            if self._final_hold_since is None:
+                self._final_hold_since = now
+            self._status = MissionStatus(
+                MissionState.IN_PROGRESS,
+                current_item=current,
+                total_items=total,
+                detail=f"{mode} at final item {current}/{total}; awaiting completion",
+            )
+            return self.check(now)
         if mode != MISSION_MODE:
             return self._end(
                 EndReason.MODE_CHANGED, f"mode {mode} before completion", current, total
             )
+        self._final_hold_since = None
         if self._was_airborne and not sample.in_air:
             return self._end(EndReason.LANDED_EARLY, "landed before completion", current, total)
 
@@ -316,6 +344,16 @@ class MissionExecutionMonitor:
         ):
             return self._end(
                 EndReason.MISSION_TIMEOUT, "mission time budget exceeded", current, total
+            )
+        if (
+            self._final_hold_since is not None
+            and now_s - self._final_hold_since > s.completion_grace_s
+        ):
+            return self._end(
+                EndReason.MODE_CHANGED,
+                f"HOLD at final item without completion for {s.completion_grace_s:.1f} s",
+                current,
+                total,
             )
         if self._item_since is not None and now_s - self._item_since > s.max_item_time_s:
             return self._end(

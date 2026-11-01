@@ -11,7 +11,7 @@ Deterministic classifier for a waypoint mission that PX4 is already flying. It n
 | `COMPLETED` | Final item reached (`current == total`) in `MISSION`/`HOLD`, armed, after observed airborne state | none |
 | `PILOT_TAKEOVER` | Any pilot mode | none — companion yields |
 | `PX4_RECOVERY_MODE` | `RETURN_TO_LAUNCH` or `LAND` (commanded or failsafe) | none — never fight PX4 |
-| `MODE_CHANGED` | Any other mode before completion (e.g. `HOLD`, `OFFBOARD`) | none |
+| `MODE_CHANGED` | Any other mode before completion (e.g. `HOLD`, `OFFBOARD`). Exception: `HOLD` while airborne on the last item (`current == total - 1`) waits up to `completion_grace_s` (X500 SITL placeholder 3 s) for progress to report completion, because PX4 SITL switched to HOLD before final-item progress on 2026-11-01 | none |
 | `DISARMED` / `LANDED_EARLY` / `NEVER_AIRBORNE` | Vehicle state inconsistent with an incomplete mission | none |
 | `MISSION_CHANGED` / `PROGRESS_REGRESSED` | Item total differs from the uploaded count, item index beyond total, or index goes backwards | none |
 | `START_TIMEOUT` | Armed `MISSION` mode not reported within the start budget | none |

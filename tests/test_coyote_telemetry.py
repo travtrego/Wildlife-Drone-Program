@@ -97,14 +97,70 @@ def test_missing_stream_makes_snapshot_unknown_and_gate_rejects() -> None:
     assert not evaluate_request(HOLD, snap).allowed
 
 
-def test_oldest_stream_sets_age() -> None:
+def test_newest_update_sets_age_while_every_stream_is_within_its_limit() -> None:
     tracker = fed(10.0)
     for t in (10.5, 11.0, 11.5):  # every stream but battery keeps arriving
         tracker.update_flight_mode("HOLD", t)
         tracker.update_armed(False, t)
         tracker.update_in_air(False, t)
         tracker.update_position(0.0, t)
-    assert tracker.snapshot(11.5).telemetry_age_s == pytest.approx(1.5)
+    # Battery 1.5 s old is inside its 4 s placeholder: the link is alive.
+    assert tracker.snapshot(11.5).telemetry_age_s == pytest.approx(0.0)
+
+
+def test_stream_past_its_own_limit_reports_its_stale_age() -> None:
+    tracker = fed(10.0)
+    for t in (11.0, 12.0, 13.0, 14.0, 14.5):  # battery silent for 4.5 s
+        tracker.update_flight_mode("HOLD", t)
+        tracker.update_armed(False, t)
+        tracker.update_in_air(False, t)
+        tracker.update_position(0.0, t)
+    assert tracker.snapshot(14.5).telemetry_age_s == pytest.approx(4.5)
+
+
+def test_observed_sitl_rates_keep_a_grant() -> None:
+    """Regression for the 2026-11-01 SITL run: battery ~0.6 Hz, mode 1 Hz.
+
+    Under the old oldest-stream rule the snapshot looked 1.4 s old on a
+    healthy link and the grant was revoked 0.6 s after it was accepted.
+    """
+
+    tracker, auth = TelemetryTracker(), DelegationAuthority()
+    revoked_at = None
+    for step in range(0, 3001):  # 30 s in 10 ms steps, integer timebase
+        t = step / 100
+        if step % 2 == 0:
+            tracker.update_position(0.0, t)  # 50 Hz
+        if step % 100 == 3:
+            tracker.update_flight_mode("HOLD", t)  # 1 Hz, jittered phase
+            tracker.update_armed(True, t)
+            tracker.update_in_air(False, t)
+            tracker.update_failsafe(False, t)
+        if step % 170 == 7:
+            tracker.update_battery_percent(100.0, t)  # ~0.6 Hz
+        if step % 20 == 0:  # 5 Hz watch tick
+            observe_vehicle(tracker, auth, t)
+            if t >= 2.0 and not auth.delegated(t) and revoked_at is None:
+                if t == 2.0:
+                    assert auth.request_grant(GrantCommand(1, t), t).accepted
+                else:
+                    revoked_at = t
+    assert revoked_at is None
+    assert auth.drain_alerts() == ()
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {Stream.FLIGHT_MODE: 2.5},  # incomplete
+        {s: 0.0 for s in Stream},
+        {s: math.inf for s in Stream},
+        {s: True for s in Stream},
+    ],
+)
+def test_config_rejects_bad_stream_limits(limits) -> None:
+    with pytest.raises(ValueError):
+        TelemetryTracker(TelemetryTrackerConfig(stream_max_age_s=limits))
 
 
 @pytest.mark.parametrize(
@@ -199,13 +255,16 @@ def test_low_percent_battery_blocks_takeoff() -> None:
 
 def test_one_silent_stream_revokes_with_link_lost_alert() -> None:
     tracker, auth = delegated_on_ground()
-    for t in (1.5, 2.0, 2.5):  # battery stream goes silent after t=1.0
+    for t in (1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5):  # battery silent after t=1.0
         tracker.update_flight_mode("HOLD", t)
         tracker.update_armed(False, t)
         tracker.update_in_air(False, t)
         tracker.update_position(0.0, t)
         tracker.update_failsafe(False, t)
-    assert not evaluate_companion_request(HOLD, tracker, auth, 2.5).allowed
+        observe_vehicle(tracker, auth, t)
+        if t <= 5.0:  # within the 4 s battery placeholder: still delegated
+            assert auth.delegated(t)
+    assert not evaluate_companion_request(HOLD, tracker, auth, 5.5).allowed
     (alert,) = auth.drain_alerts()
     assert alert.reason is RevocationReason.TELEMETRY_LINK_LOST
 

@@ -3,16 +3,25 @@
 MAVSDK delivers vehicle state as independent async streams (flight mode,
 armed, in-air, position, battery). The action gate and delegation authority
 need one :class:`~coyote.autonomy.action_gate.VehicleSnapshot` whose
-``telemetry_age_s`` honestly reflects how old the *oldest* of those values is.
+``telemetry_age_s`` honestly reflects whether the link is alive and every
+stream is fresh.
 This module is that adapter, with no MAVSDK import so it stays unit-testable:
 the future MAVSDK task only calls ``update_*`` with values it receives and a
 monotonic timestamp.
 
 Conservative rules (implementation choices, not new owner requirements)
 ----------------------------------------------------------------------
-* **Oldest stream sets the age.** ``telemetry_age_s`` is ``now`` minus the
-  oldest required stream update, so one silent stream makes the whole snapshot
-  stale even if other streams keep arriving.
+* **Each stream has its own staleness limit; the link age is the newest
+  update.** PX4 SITL (2026-11-01, see ``docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md``)
+  sent flight mode, armed and in-air at 1 Hz, position at about 50 Hz and
+  battery at about 0.6 Hz. Using the *oldest* stream as the age (the previous
+  rule) made the snapshot look 1.4 s old on a healthy link and revoked every
+  grant within a second. Now any required stream older than its own limit in
+  ``TelemetryTrackerConfig.stream_max_age_s`` makes the snapshot report that
+  stream's (stale) age, so the authority revokes; otherwise
+  ``telemetry_age_s`` is the age of the *newest* update, which measures
+  whether the link is alive. Every per-stream limit must be at least the
+  authority's and gate's age limit (1 s placeholder).
 * **Missing or invalid means unknown.** A required stream that was never
   received, or whose last value was malformed (non-bool armed/in-air,
   non-finite altitude), makes ``telemetry_age_s`` infinite, which the gate and
@@ -37,7 +46,7 @@ development placeholders, not tested values.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from coyote.autonomy.action_gate import (
@@ -63,15 +72,39 @@ REQUIRED_STREAMS = tuple(Stream)
 UNKNOWN_MODE = "UNKNOWN"
 
 
+def _default_stream_max_age_s() -> dict[Stream, float]:
+    # MODEL INPUTS / PLACEHOLDERS, sized from one PX4 SITL observation on
+    # 2026-11-01 (about two intervals of each observed rate). Not measured on
+    # Coyote's real link.
+    return {
+        Stream.FLIGHT_MODE: 2.5,  # 1 Hz observed
+        Stream.ARMED: 2.5,  # 1 Hz observed
+        Stream.IN_AIR: 2.5,  # 1 Hz observed
+        Stream.POSITION: 1.0,  # ~50 Hz observed
+        Stream.BATTERY: 4.0,  # ~0.6 Hz observed
+    }
+
+
 @dataclass(frozen=True)
 class TelemetryTrackerConfig:
-    """MODEL INPUT / PLACEHOLDER: not derived from SITL or flight testing."""
+    """MODEL INPUTS / PLACEHOLDERS: see ``_default_stream_max_age_s``."""
 
     max_failsafe_age_s: float = 1.0
+    stream_max_age_s: dict[Stream, float] = field(default_factory=_default_stream_max_age_s)
 
     def validate(self) -> None:
         if not math.isfinite(self.max_failsafe_age_s) or self.max_failsafe_age_s <= 0.0:
             raise ValueError("max_failsafe_age_s must be a positive finite number")
+        if set(self.stream_max_age_s) != set(REQUIRED_STREAMS):
+            raise ValueError("stream_max_age_s must give a limit for every required stream")
+        for stream, limit in self.stream_max_age_s.items():
+            if (
+                isinstance(limit, bool)
+                or not isinstance(limit, int | float)
+                or not math.isfinite(limit)
+                or limit <= 0.0
+            ):
+                raise ValueError(f"stream_max_age_s[{stream.name}] must be positive and finite")
 
 
 def normalize_flight_mode(mode: object) -> str:
@@ -167,16 +200,28 @@ class TelemetryTracker:
         return self._failsafe
 
     def snapshot(self, now_s: float) -> VehicleSnapshot:
-        """Build a snapshot whose age is that of the oldest required stream.
+        """Build a snapshot of the latest values.
 
+        ``telemetry_age_s`` is infinite if any required stream is missing or
+        malformed; the age of the oldest stream if any stream is past its own
+        limit; otherwise the age of the newest update (link liveness).
         ``operator_delegated`` is always False here; only
         :meth:`DelegationAuthority.apply_to` may set it.
         """
 
-        if self.missing_streams() or not math.isfinite(now_s):
-            age = math.inf
-        else:
-            age = now_s - min(self._times[s] for s in REQUIRED_STREAMS)
+        age = math.inf
+        if not self.missing_streams() and math.isfinite(now_s):
+            limits = self._config.stream_max_age_s
+            ages = {s: now_s - self._times[s] for s in REQUIRED_STREAMS}
+            if any(a < 0.0 for a in ages.values()):
+                age = math.inf
+            elif all(a <= limits[s] for s, a in ages.items()):
+                age = min(ages.values())
+            else:
+                # A stream is past its own limit: report the oldest age so the
+                # authority revokes as TELEMETRY_LINK_LOST (this assumes every
+                # per-stream limit is at least the authority/gate age limit).
+                age = max(ages.values())
         return VehicleSnapshot(
             flight_mode=self._values.get(Stream.FLIGHT_MODE, UNKNOWN_MODE),
             armed=self._values.get(Stream.ARMED, False),
