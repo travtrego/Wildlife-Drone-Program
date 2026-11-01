@@ -1,4 +1,0 @@
-coyote
-fighter_vtol
-shared
-x500
