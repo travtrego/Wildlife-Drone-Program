@@ -12,7 +12,7 @@ monotonic timestamp.
 Conservative rules (implementation choices, not new owner requirements)
 ----------------------------------------------------------------------
 * **Each stream has its own staleness limit; the link age is the newest
-  update.** PX4 SITL (2026-11-01, see ``docs/SITL_VALIDATION_2026-11-01.md``)
+  update.** PX4 SITL (2026-11-01, see ``docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md``)
   sent flight mode, armed and in-air at 1 Hz, position at about 50 Hz and
   battery at about 0.6 Hz. Using the *oldest* stream as the age (the previous
   rule) made the snapshot look 1.4 s old on a healthy link and revoked every
