@@ -76,6 +76,72 @@ def test_completion_tolerates_hold_reported_at_final_item():
     assert m.update(sample(1.0, mode="HOLD", current=N)).state is MissionState.COMPLETED
 
 
+# --- HOLD reported before final-item progress (SITL 2026-11-01) -------------
+
+
+def test_hold_before_final_progress_completes_within_grace():
+    """Regression: PX4 said "Mission finished, loitering" (HOLD) while mission
+    progress still showed the last item active; the monitor ended MODE_CHANGED."""
+
+    m = started(completion_grace_s=3.0)
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    pending = m.update(sample(5.0, mode="HOLD", current=N - 1))
+    assert pending.state is MissionState.IN_PROGRESS
+    assert "awaiting completion" in pending.detail
+    assert m.check(6.0).state is MissionState.IN_PROGRESS
+    assert m.update(sample(6.5, mode="HOLD", current=N)).state is MissionState.COMPLETED
+
+
+def test_hold_at_final_item_without_progress_ends_after_grace():
+    m = started(completion_grace_s=3.0)
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    m.update(sample(5.0, mode="HOLD", current=N - 1))
+    m.update(sample(7.0, mode="HOLD", current=N - 1))
+    ended = m.update(sample(8.5, mode="HOLD", current=N - 1))
+    assert ended.reason is EndReason.MODE_CHANGED
+    assert ended.recommendation is Recommendation.NONE
+
+
+def test_hold_grace_applies_only_at_final_item_airborne():
+    m = started(completion_grace_s=3.0)
+    fly_to_item(m, 0, 1.0)
+    fly_to_item(m, 1, 2.0)
+    assert m.update(sample(3.0, mode="HOLD", current=1)).reason is EndReason.MODE_CHANGED
+
+    m = started(completion_grace_s=3.0)
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    landed = m.update(sample(5.0, mode="HOLD", in_air=False, current=N - 1))
+    assert landed.reason is EndReason.MODE_CHANGED
+
+
+def test_return_to_mission_clears_final_hold_grace():
+    m = started(completion_grace_s=1.0)
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    m.update(sample(5.0, mode="HOLD", current=N - 1))
+    m.update(sample(5.5, mode="MISSION", current=N - 1))
+    m.update(sample(6.5, mode="MISSION", current=N - 1))
+    assert m.check(7.0).state is MissionState.IN_PROGRESS  # old grace timer gone
+
+
+def test_pilot_or_recovery_mode_during_final_hold_grace_ends_at_once():
+    m = started(completion_grace_s=3.0)
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    m.update(sample(5.0, mode="HOLD", current=N - 1))
+    assert m.update(sample(5.5, mode="POSCTL", current=N - 1)).reason is EndReason.PILOT_TAKEOVER
+
+
+def test_without_grace_hold_at_final_item_still_ends_at_once():
+    m = started()  # completion_grace_s defaults to 0
+    for i, t in enumerate([1.0, 2.0, 3.0, 4.0]):
+        fly_to_item(m, i, t)
+    assert m.update(sample(5.0, mode="HOLD", current=N - 1)).reason is EndReason.MODE_CHANGED
+
+
 def test_terminal_status_is_sticky():
     m = started()
     m.update(sample(0.5, current=1))
@@ -339,6 +405,8 @@ def test_lifecycle_misuse_raises():
         dict(max_mission_time_s=math.inf),
         dict(max_telemetry_age_s=math.nan),
         dict(max_item_time_s=61.0, max_mission_time_s=60.0),
+        dict(completion_grace_s=-0.1),
+        dict(completion_grace_s=math.inf),
     ],
 )
 def test_invalid_settings_are_refused(overrides):
