@@ -52,7 +52,7 @@ Run the mission with `python -m simulation.mavsdk.waypoint_mission_flight` in te
 | A6 | Before the script: `param set SIM_BAT_MIN_PCT 10` and `param set SIM_BAT_DRAIN 30` *(unverified semantics)*, then run | Either the preflight gate refuses (battery below 40%), or PX4's own low-battery reaction starts mid-mission and the monitor ends `px4_recovery_mode`. Record PX4's battery messages | `param reset SIM_BAT_MIN_PCT` and `param reset SIM_BAT_DRAIN`, then restart PX4 |
 | A7 | Mid-mission: `mavlink stop -u 14580` *(unverified; stops the link MAVSDK uses)* | About 2 s later, `ended telemetry_stale`, no follow-up. PX4 continues on its own and may trigger its own link-loss reaction. Record it | Restart PX4 |
 
-For each run, copy the full terminal 2 output and the PX4 lines from terminal 1 around the event.
+For each run, copy the full terminal 2 output and the PX4 lines from terminal 1 around the event. Since the mission-trace change, terminal 2 also prints every mode/armed/in-air/progress/monitor change and a `Mission trace` summary at exit; include the whole summary.
 
 Learned 2026-11-01: PX4 refuses `commander arm`/`takeoff` from the shell unless a MAVSDK client (ground station) is connected, so A1/A2 need the watch script or QGC running; POSCTL is refused without RC. See the [afternoon record](../../docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md).
 
