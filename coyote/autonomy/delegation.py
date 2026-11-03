@@ -41,9 +41,9 @@ Design choices (implementation, not new owner requirements)
   one :class:`RevocationAlert`. The future MAVSDK/GCS adapter drains and
   delivers them; alerts stay queued across a link outage until drained.
 
-Open items: ``failsafe_active`` has only a candidate, unobserved source
-(``failsafe_source.py``), and how the grant command reaches the Jetson is not
-chosen yet. Timing defaults are
+Open items: ``failsafe_active`` has only a candidate source
+(``failsafe_source.py``), and the grant command transport has only a candidate,
+SITL-unobserved decoder (``grant_transport.py``). Timing defaults are
 development placeholders (model inputs), not tested values.
 """
 
@@ -68,6 +68,7 @@ class RevocationReason(Enum):
     PILOT_TAKEOVER = "pilot_takeover"
     PX4_RECOVERY_MODE = "px4_recovery_mode"
     FLIGHT_ENDED = "flight_ended"
+    COMMAND_LINK_LOST = "command_link_lost"
     INVALID_INPUT = "invalid_input"
 
 
@@ -194,6 +195,15 @@ class DelegationAuthority:
 
     def revoke_by_operator(self, now_s: float) -> None:
         self._revoke(RevocationReason.OPERATOR_REVOKED, "ground station revoked delegation", now_s)
+
+    def revoke_command_link_lost(self, detail: str, now_s: float) -> None:
+        """Revoke because the operator's command channel stopped working.
+
+        Without it the operator can no longer send a revoke, so delegation is
+        withdrawn (implementation choice). Like every revocation it is sticky.
+        """
+
+        self._revoke(RevocationReason.COMMAND_LINK_LOST, detail, now_s)
 
     # -------------------------------------------------------------- internals
     def _unhealthy(

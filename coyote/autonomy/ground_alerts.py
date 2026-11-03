@@ -75,6 +75,7 @@ _REASON_TEXT: dict[RevocationReason, tuple[str, AlertSeverity]] = {
     RevocationReason.PILOT_TAKEOVER: ("PILOT TAKEOVER", AlertSeverity.WARNING),
     RevocationReason.PX4_RECOVERY_MODE: ("PX4 RTL/LAND", AlertSeverity.WARNING),
     RevocationReason.INVALID_INPUT: ("INVALID STATE", AlertSeverity.WARNING),
+    RevocationReason.COMMAND_LINK_LOST: ("GROUND CMD LINK LOST", AlertSeverity.WARNING),
 }
 
 
