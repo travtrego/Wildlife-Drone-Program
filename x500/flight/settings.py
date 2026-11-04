@@ -3,7 +3,8 @@
 **Model inputs / development placeholders.** None of these numbers is a
 measurement of the X500 or a tuned PX4 parameter. They are deliberately small
 for PX4 SITL development and must be set inside, never looser than, the PX4
-geofence and failsafe parameters before any use beyond simulation. Coyote will
+geofence and failsafe parameters before any use beyond simulation
+(``x500.flight.px4_limits`` refuses a mission when they are not). Coyote will
 pass its own limits to the same code.
 """
 

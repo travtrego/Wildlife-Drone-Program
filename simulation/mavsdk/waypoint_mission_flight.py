@@ -10,6 +10,10 @@ listener (same guard as the smoke mission). Sequence:
    the companion minimum and every PX4 health flag, including ``is_armable``,
    True. This keeps the script from replacing a mission on a vehicle that is
    already armed or flying.
+3a. PX4 limit check (``require_px4_limits_consistent``): read ``GF_MAX_HOR_DIST``,
+   ``GF_MAX_VER_DIST``, ``GF_ACTION``, ``MPC_XY_VEL_MAX`` and ``BAT_LOW_THR``
+   (read-only) and refuse, sending nothing, if the companion limits are looser
+   than PX4's or a value cannot be read. Disabled PX4 limits are printed as notes.
 4. Start read-only telemetry subscriptions, upload the mission and verify it by
    read-back (``upload_and_verify``).
 5. Re-run the preflight gate, then arm (PX4 arming checks stay enabled) and
@@ -56,6 +60,7 @@ from x500.flight.mission_telemetry import (
 )
 from x500.flight.monitor_settings import x500_sitl_monitor_settings
 from x500.flight.preflight import PreflightLimits, require_preflight_ready
+from x500.flight.px4_limits import require_px4_limits_consistent
 from x500.flight.settings import X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
@@ -99,12 +104,18 @@ async def fly_waypoint_mission(
     """Fly one verified mission on an already connected *simulated* vehicle.
 
     Raises :class:`PreflightRefused` before upload, or before arm, if the
-    vehicle is not ready; nothing is sent in that case.
+    vehicle is not ready, and :class:`Px4LimitsRefused` before upload if the
+    companion limits contradict the PX4 parameters; nothing is sent in either case.
     """
 
     await _wait_for_health(drone, health_timeout_s)
     home = await _read_home(drone, health_timeout_s)
     await require_preflight_ready(drone, preflight_limits, health_timeout_s, clock)
+    px4_limits = await require_px4_limits_consistent(
+        drone, limits, preflight_limits, health_timeout_s
+    )
+    for note in px4_limits.notes:
+        print(f"PX4 limit note: {note}")
     items = build_mission_items(waypoints, home, limits)
     settings = settings_for(len(items))
     monitor = MissionExecutionMonitor(settings)

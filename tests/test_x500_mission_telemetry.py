@@ -32,6 +32,7 @@ from x500.flight.mission_telemetry import (
     subscribe_mission_telemetry,
 )
 from x500.flight.preflight import REQUIRED_HEALTH_FLAGS, PreflightRefused
+from x500.flight.px4_limits import Px4LimitsRefused
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
     MissionCheckError,
@@ -353,6 +354,20 @@ class FakeVehicle:
             mission_progress=self._progress,
         )
         self.action = SimpleNamespace(arm=self._arm, return_to_launch=self._rtl)
+        # PX4 SITL defaults as documented (model inputs, not read from a build).
+        self.params = {
+            "GF_MAX_HOR_DIST": 0.0,
+            "GF_MAX_VER_DIST": 0.0,
+            "GF_ACTION": 2,
+            "MPC_XY_VEL_MAX": 12.0,
+            "BAT_LOW_THR": 0.15,
+        }
+        self.param = SimpleNamespace(
+            get_param_float=self._get_param, get_param_int=self._get_param
+        )
+
+    async def _get_param(self, name):
+        return self.params[name]
 
     def _periodic(self, read):
         async def gen():
@@ -492,6 +507,22 @@ def test_fake_flight_refuses_when_px4_not_armable() -> None:
         **{flag: flag != "is_armable" for flag in REQUIRED_HEALTH_FLAGS}
     )
     with pytest.raises(PreflightRefused, match="is_armable is False"):
+        _fly(vehicle)
+    assert vehicle.plan is None and vehicle.commands == []
+
+
+def test_fake_flight_refuses_ceiling_above_px4_geofence_before_upload() -> None:
+    vehicle = FakeVehicle()
+    vehicle.params["GF_MAX_VER_DIST"] = LIMITS.max_relative_altitude_m - 5.0
+    with pytest.raises(Px4LimitsRefused, match="GF_MAX_VER_DIST"):
+        _fly(vehicle)
+    assert vehicle.plan is None and vehicle.commands == []
+
+
+def test_fake_flight_refuses_unreadable_px4_parameter_before_upload() -> None:
+    vehicle = FakeVehicle()
+    del vehicle.params["BAT_LOW_THR"]  # fake raises KeyError, like a missing param
+    with pytest.raises(Px4LimitsRefused, match="BAT_LOW_THR not read"):
         _fly(vehicle)
     assert vehicle.plan is None and vehicle.commands == []
 
