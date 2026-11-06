@@ -90,6 +90,25 @@ It prints a status line every second, an event line on every change, and a summa
 | B8 | Landed and disarmed, `commander mode auto:loiter`, `g`, then Ctrl+Z in terminal 1 (pauses PX4 and Gazebo) | About 1 s later: `delegated -> False`, `PX4 TELEMETRY LOST`. Then `fg` in terminal 1 to resume |
 | — | `q` | Summary: stream rates, HEARTBEAT senders, every `system_status` value with its raw JSON |
 
+### Part B-M: grant over MAVLink (optional, after Part B)
+
+This checks whether a ground-station `COMMAND_LONG` reaches the companion through PX4. Start PX4 fresh and close QGroundControl, because the sender uses the ground port 14550. In terminal 2, start the watch as the companion. In terminal 3, start the SITL-only ground sender:
+
+~~~bash
+python -m simulation.mavsdk.coyote_delegation_watch --grant-source mavlink   # terminal 2
+python -m simulation.mavsdk.coyote_ground_sender                            # terminal 3
+~~~
+
+| # | What to do | Expected watch output (terminal 2) |
+|---|---|---|
+| BM1 | Wait 30 s; `commander mode auto:loiter` if PX4 is in a pilot mode | Status lines as in B1. The summary later shows whether `(1, 191)` or `(255, 190)` heartbeats appeared |
+| BM2 | `g` in terminal 3 | `ground command grant #N ... accepted=True`. **If nothing appears, PX4 did not forward the command (or MAVSDK did not deliver it). Record that; it is the main unknown** |
+| BM3 | `r` in terminal 3 | `ground command revoke`, `delegated -> False`, NOTICE alert |
+| BM4 | `g` in terminal 3, then quit the sender (`q`) | Whether the watch notices: it should not revoke on sender exit alone (the command stream is a PX4 subscription). Record what happens |
+| — | `q` in terminal 2 | Summary includes the `command_long` count |
+
+*(unverified: the 14550 ground port and PX4 command forwarding between its ground and onboard links come from PX4 documentation, not from this build.)* Copy both terminals' output.
+
 ## Send back
 
 The terminal 2 output from every run (especially the Part B summary), the PX4 lines around each event, the three version lines from step 0, the ULog checksums, and whether QGC showed the alerts. I'll turn them into a dated record in `docs/` and fix any assumption that turns out wrong.
