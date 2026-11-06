@@ -33,6 +33,7 @@ from x500.flight.mission_telemetry import (
 )
 from x500.flight.preflight import REQUIRED_HEALTH_FLAGS, PreflightRefused
 from x500.flight.px4_limits import Px4LimitsRefused
+from x500.flight.return_monitor import ReturnEndReason, ReturnSettings, ReturnState
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
     MissionCheckError,
@@ -47,6 +48,7 @@ class Mode(Enum):  # stand-in for mavsdk.telemetry.FlightMode
     MISSION = 2
     RETURN_TO_LAUNCH = 3
     POSCTL = 4
+    LAND = 5
 
 
 def settings(**overrides) -> MonitorSettings:
@@ -328,12 +330,19 @@ MISSION_MODULE = SimpleNamespace(
 )
 
 
+# Fast fake-clock budgets for the return watch (test values, not model inputs).
+FAST_RETURN = ReturnSettings(
+    accept_timeout_s=0.5, max_return_time_s=1.0, disarm_timeout_s=0.3, max_telemetry_age_s=0.5
+)
+
+
 class FakeVehicle:
     """In-memory vehicle: progresses through items after start, lands after RTL."""
 
     def __init__(self, stall=False):
         self.mode, self.armed, self.in_air = Mode.HOLD, False, False
         self.current, self.plan, self.stall = 0, None, stall
+        self.auto_disarm = True
         self.commands = []
         self.health = SimpleNamespace(**{flag: True for flag in REQUIRED_HEALTH_FLAGS})
         self.battery_percent = 95.0
@@ -415,6 +424,9 @@ class FakeVehicle:
         async def land():
             await asyncio.sleep(0.03)
             self.in_air = False
+            if self.auto_disarm:
+                await asyncio.sleep(0.02)  # stands in for PX4 COM_DISARM_LAND
+                self.armed = False
 
         self._landing = asyncio.get_running_loop().create_task(land())
 
@@ -429,7 +441,7 @@ def _fly(vehicle, **overrides):
             health_timeout_s=1.0,
             settings_for=lambda n: settings(expected_item_count=n, **overrides),
             check_interval_s=0.01,
-            landing_timeout_s=1.0,
+            return_settings=FAST_RETURN,
         )
     )
 
@@ -439,6 +451,57 @@ def test_fake_flight_completes_requests_rtl_and_lands() -> None:
     result = _fly(vehicle)
     assert result.status.state is MissionState.COMPLETED
     assert result.passed and result.landed
+    assert vehicle.commands == ["arm", "start_mission", "return_to_launch"]
+
+
+def test_fake_flight_return_watch_sees_rtl_landing_and_disarm() -> None:
+    vehicle = FakeVehicle()
+    result = _fly(vehicle)
+    assert result.return_status.state is ReturnState.LANDED
+    assert result.landed and result.passed
+
+
+def test_fake_flight_landed_but_not_disarmed_does_not_pass() -> None:
+    vehicle = FakeVehicle()
+    vehicle.auto_disarm = False
+    result = _fly(vehicle)
+    assert result.status.state is MissionState.COMPLETED and result.rtl_requested
+    assert result.return_status.reason is ReturnEndReason.LANDED_NOT_DISARMED
+    assert not result.landed and not result.passed
+    # The watch never disarms or sends anything after the RTL request.
+    assert vehicle.commands == ["arm", "start_mission", "return_to_launch"]
+
+
+def test_fake_flight_rtl_request_ignored_by_px4_is_reported_not_retried() -> None:
+    vehicle = FakeVehicle()
+
+    async def rtl_ignored():
+        vehicle.commands.append("return_to_launch")  # acknowledged, but mode never changes
+
+    vehicle.action.return_to_launch = rtl_ignored
+    result = _fly(vehicle)
+    assert result.return_status.reason is ReturnEndReason.RETURN_NOT_ACCEPTED
+    assert not result.passed
+    assert vehicle.commands.count("return_to_launch") == 1
+
+
+def test_fake_flight_pilot_takeover_during_return_ends_watch_without_commands() -> None:
+    vehicle = FakeVehicle()
+
+    async def rtl_then_takeover():
+        vehicle.commands.append("return_to_launch")
+        vehicle.mode = Mode.RETURN_TO_LAUNCH
+
+        async def takeover():
+            await asyncio.sleep(0.03)
+            vehicle.mode = Mode.POSCTL
+
+        vehicle._takeover = asyncio.get_running_loop().create_task(takeover())
+
+    vehicle.action.return_to_launch = rtl_then_takeover
+    result = _fly(vehicle)
+    assert result.return_status.reason is ReturnEndReason.PILOT_TAKEOVER
+    assert not result.passed
     assert vehicle.commands == ["arm", "start_mission", "return_to_launch"]
 
 
@@ -468,6 +531,7 @@ def test_fake_flight_pilot_takeover_sends_no_follow_up() -> None:
     assert result.status.reason is EndReason.PILOT_TAKEOVER
     assert vehicle.commands == ["arm", "start_mission"]
     assert not result.passed
+    assert result.return_status is None  # no RTL request, so no return watch
 
 
 @pytest.mark.parametrize(

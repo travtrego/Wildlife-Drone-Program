@@ -51,7 +51,7 @@ import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from .mission_monitor import (
     AUTOPILOT_RECOVERY_MODES,
@@ -71,6 +71,14 @@ class MissionStream(Enum):
     ARMED = "armed"
     IN_AIR = "in_air"
     PROGRESS = "mission_progress"
+
+
+class _SampleMonitor(Protocol):
+    """What :func:`run_monitor` drives: the mission monitor or the return watch."""
+
+    def update(self, sample: MissionSample) -> Any: ...
+
+    def check(self, now_s: float) -> Any: ...
 
 
 # Streams whose update times set the sample age (see module docstring).
@@ -196,18 +204,22 @@ def subscribe_mission_telemetry(
 
 
 async def run_monitor(
-    monitor: MissionExecutionMonitor,
+    monitor: MissionExecutionMonitor | _SampleMonitor,
     combiner: MissionTelemetryCombiner,
     started_at_s: float,
     clock: Callable[[], float],
     check_interval_s: float,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
-    on_status: Callable[[MissionStatus, float], None] | None = None,
-) -> MissionStatus:
+    on_status: Callable[[Any, float], None] | None = None,
+) -> Any:
     """Feed new samples and periodic checks until the monitor is terminal.
 
     ``on_status`` (read-only, e.g. ``MissionTrace.monitor_status``) receives
     each checked status with its check time.
+
+    Also drives :class:`x500.flight.return_monitor.ReturnLandingMonitor` after
+    an RTL request (pass the request time as ``started_at_s``); it returns that
+    monitor's terminal ``ReturnStatus``.
 
     ``monitor.start(started_at_s)`` must already have been called. Termination
     is guaranteed as long as ``clock`` advances: the monitor's start, item,

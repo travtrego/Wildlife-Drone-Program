@@ -42,16 +42,34 @@ Read-only record of what the companion received during a monitored mission, adde
 
 Its numbers are observations from one run, not validated limits; changing a placeholder from them is a separate, reviewed change. **Evidence status:** unit-tested only (`tests/test_x500_mission_trace.py`), with fake clocks and the in-memory fake vehicle. It has not run in PX4 SITL.
 
+## `return_monitor.py`
+
+Read-only watch of PX4's return and landing after the flight script requests `RETURN_TO_LAUNCH`. Before this, the script only waited for `in_air` to become False, so it could not tell a normal return apart from PX4 ignoring the request, a pilot takeover, PX4 leaving RTL, a vehicle left armed on the ground or a dead link. `ReturnLandingMonitor` is fed the same combined telemetry as the mission monitor (via `run_monitor`) and ends in one of:
+
+| Outcome | Trigger |
+|---|---|
+| `LANDED` (pass) | PX4 reported `RETURN_TO_LAUNCH` or `LAND` after the request, then on the ground, then disarmed |
+| `RETURN_NOT_ACCEPTED` | Still `MISSION`/`HOLD` after `accept_timeout_s` |
+| `PILOT_TAKEOVER` | Any pilot mode, in any state |
+| `MODE_CHANGED` | Airborne in a mode other than RTL/LAND after PX4 entered RTL/LAND, or a mode other than MISSION/HOLD/RTL/LAND before it |
+| `DISARMED_IN_AIR` / `LANDED_WITHOUT_RETURN` | Disarmed while airborne; on the ground before PX4 reported RTL/LAND |
+| `LANDED_NOT_DISARMED` | On the ground but still armed after `disarm_timeout_s` |
+| `RETURN_TIMEOUT` / `TELEMETRY_STALE` | Not landed and disarmed within `max_return_time_s`; no valid sample within the age limit |
+
+It never commands and never recommends: no retry, no LAND, no disarm. On the ground the mode is ignored (PX4's post-landing mode is unobserved); `in_air` going True again before disarm returns to the returning state. The flight script's PASS now also requires `LANDED` (landed **and** disarmed). X500 values in [`monitor_settings.py`](monitor_settings.py) (5 s accept, 120 s return — the former landing timeout — 10 s disarm, 2 s telemetry age) are **model inputs / SITL development placeholders**; PX4's own auto-disarm (`COM_DISARM_LAND`) is not read.
+
+**Evidence status:** unit-tested only (`tests/test_x500_return_monitor.py`, plus fake-vehicle cases in `tests/test_x500_mission_telemetry.py`). Not yet run in PX4 SITL; the modes PX4 reports during RTL descent and after landing, and the disarm delay, are unobserved.
+
 ## `mission_telemetry.py`
 
 Connects the monitor to MAVSDK. `MissionTelemetryCombiner` keeps the latest flight mode, armed, in-air and `mission_progress` values and builds one `MissionSample` stamped with the **oldest** of the periodic streams (mode, armed, in-air), so one silent stream makes the monitor report `TELEMETRY_STALE`. Mission progress is latched and required once but does not set the age, because MAVSDK may report it only when it changes. No sample is produced until every stream has reported; samples older than the start request are not fed; out-of-order updates are dropped. `subscribe_mission_telemetry` runs one read-only task per stream and records a stream that ends or fails. `run_monitor` feeds new samples and periodic checks until the monitor is terminal.
 
 `follow_up_request` decides whether the ground script may *request* PX4 `RETURN_TO_LAUNCH` after the monitor ends: only after `COMPLETED` or a monitor RTL recommendation (`ITEM_STALLED`/`MISSION_TIMEOUT`), and only while fresh, valid telemetry still shows an armed, airborne vehicle in `MISSION`/`HOLD`. Pilot modes, PX4 `RETURN_TO_LAUNCH`/`LAND`, stale or invalid telemetry and every other end reason get no request.
 
-[`simulation/mavsdk/waypoint_mission_flight.py`](../../simulation/mavsdk/waypoint_mission_flight.py) is the SITL entry point that uses it: loopback endpoint guard and waypoint-limit check before connecting, then health → home → preflight gate → PX4 limit check → upload/read-back → preflight gate → arm (PX4 arming checks stay enabled) → `start_mission` → monitor → RTL request if allowed → wait for landing. Run from the repository root with `gz_x500` SITL already running:
+[`simulation/mavsdk/waypoint_mission_flight.py`](../../simulation/mavsdk/waypoint_mission_flight.py) is the SITL entry point that uses it: loopback endpoint guard and waypoint-limit check before connecting, then health → home → preflight gate → PX4 limit check → upload/read-back → preflight gate → arm (PX4 arming checks stay enabled) → `start_mission` → monitor → RTL request if allowed → return watch (RTL/LAND, landed, disarmed). Run from the repository root with `gz_x500` SITL already running:
 
 ~~~bash
 python -m simulation.mavsdk.waypoint_mission_flight
 ~~~
 
-**Evidence status:** unit-tested only (`tests/test_x500_mission_telemetry.py`), with fake clocks and an in-memory fake vehicle. **One nominal SITL run passed** ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)): PX4 started the mission from the ground without a takeoff item, the monitor completed, RTL was requested and the vehicle landed. Still unobserved: the exact modes and stream rates (the run only shows they fit the current placeholders). Stall, takeover and stale-telemetry paths are unit-tested only. The 0.2 s check interval and 120 s landing timeout are SITL placeholders.
+**Evidence status:** unit-tested only (`tests/test_x500_mission_telemetry.py`), with fake clocks and an in-memory fake vehicle. **One nominal SITL run passed** ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)): PX4 started the mission from the ground without a takeoff item, the monitor completed, RTL was requested and the vehicle landed. Still unobserved: the exact modes and stream rates (the run only shows they fit the current placeholders). Stall, takeover and stale-telemetry paths are unit-tested only. The 0.2 s check interval is a SITL placeholder; the return watch has its own placeholders (above).
