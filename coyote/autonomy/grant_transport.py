@@ -44,8 +44,10 @@ What this does **not** establish
 * No ``COMMAND_ACK`` is sent, so a ground tool may retransmit. A retransmitted
   grant reuses its sequence and is refused as "not new" without changing
   state; the first copy's result stands.
-* Which ground tool sends the command is not chosen. A fixed QGroundControl
-  button cannot increment the sequence; see the PR for the owner question.
+* Ground tool (owner decision 2026-11-06): a small ground-side script/app
+  that increments the sequence on every grant; a fixed QGroundControl button
+  is not used. Its sequence keeping and message fields are in
+  :mod:`coyote.ground.grant_sender`; the MAVLink send itself is not written.
 
 If the ``COMMAND_LONG`` subscription ends or raises, the operator can no longer
 revoke through this channel, so delegation is revoked with
