@@ -45,3 +45,5 @@ python -m simulation.mavsdk.waypoint_upload_check  # PX4 SITL gz_x500 must alrea
 [`simulation/mavsdk/waypoint_mission_flight.py`](../simulation/mavsdk/waypoint_mission_flight.py) is the next SITL step: it flies the verified mission under the execution monitor and requests PX4 RTL only after completion or a monitor RTL recommendation with fresh telemetry. See [flight/README.md](flight/README.md). **Passed one nominal headless SITL run on 2026-11-01** ([record](../docs/SITL_VALIDATION_2026-11-01.md)); failure paths are unit-tested only. No hardware evidence.
 
 Before upload the flight script also checks, read-only, that the companion limits are not looser than the PX4 geofence, speed and battery-low parameters, and refuses while the PX4 geofence is disabled ([`flight/px4_limits.py`](flight/px4_limits.py)); unit-tested only, not yet run in SITL.
+
+After its RTL request the flight script watches the return read-only until PX4 reports RTL/LAND, lands and disarms, and reports any other ending without sending a further command ([`flight/return_monitor.py`](flight/return_monitor.py)); unit-tested only, not yet run in SITL.
