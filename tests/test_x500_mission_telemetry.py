@@ -354,11 +354,12 @@ class FakeVehicle:
             mission_progress=self._progress,
         )
         self.action = SimpleNamespace(arm=self._arm, return_to_launch=self._rtl)
-        # PX4 SITL defaults as documented (model inputs, not read from a build).
+        # Checklist SITL geofence plus PX4 defaults as documented (model inputs,
+        # not read from a build).
         self.params = {
-            "GF_MAX_HOR_DIST": 0.0,
-            "GF_MAX_VER_DIST": 0.0,
-            "GF_ACTION": 2,
+            "GF_MAX_HOR_DIST": 150.0,
+            "GF_MAX_VER_DIST": 40.0,
+            "GF_ACTION": 3,
             "MPC_XY_VEL_MAX": 12.0,
             "BAT_LOW_THR": 0.15,
         }
@@ -515,6 +516,14 @@ def test_fake_flight_refuses_ceiling_above_px4_geofence_before_upload() -> None:
     vehicle = FakeVehicle()
     vehicle.params["GF_MAX_VER_DIST"] = LIMITS.max_relative_altitude_m - 5.0
     with pytest.raises(Px4LimitsRefused, match="GF_MAX_VER_DIST"):
+        _fly(vehicle)
+    assert vehicle.plan is None and vehicle.commands == []
+
+
+def test_fake_flight_refuses_px4_default_geofence_before_upload() -> None:
+    vehicle = FakeVehicle()
+    vehicle.params.update(GF_MAX_HOR_DIST=0.0, GF_MAX_VER_DIST=0.0, GF_ACTION=0)
+    with pytest.raises(Px4LimitsRefused, match="GF_ACTION = 0"):
         _fly(vehicle)
     assert vehicle.plan is None and vehicle.commands == []
 

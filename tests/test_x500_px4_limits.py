@@ -44,9 +44,9 @@ def findings(**overrides):
     return px4_limit_findings({**ENFORCED, **overrides}, MISSION, PREFLIGHT)
 
 
-def test_companion_inside_enforced_px4_limits_passes_without_notes() -> None:
+def test_companion_inside_enforced_px4_limits_passes() -> None:
     report = findings()
-    assert report.consistent and report.notes == ()
+    assert report.consistent and report.refusals == ()
 
 
 def test_equal_limits_are_not_looser() -> None:
@@ -79,12 +79,38 @@ def test_all_contradictions_are_reported_together() -> None:
     assert len(report.refusals) == 3
 
 
-def test_disabled_geofence_and_no_breach_action_are_notes_not_refusals() -> None:
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("GF_MAX_HOR_DIST", "GF_MAX_HOR_DIST = 0: PX4 does not enforce the distance-from-home"),
+        ("GF_MAX_VER_DIST", "GF_MAX_VER_DIST = 0: PX4 does not enforce the altitude ceiling"),
+    ],
+)
+def test_disabled_px4_geofence_limit_refuses(name, expected) -> None:
+    # Owner decision 2026-11-06: no PX4 backstop means no mission.
+    report = findings(**{name: 0.0})
+    assert not report.consistent
+    assert any(expected in r for r in report.refusals), report.refusals
+
+
+@pytest.mark.parametrize("action", [2, 3, 5])
+def test_breach_actions_that_stop_the_vehicle_pass(action) -> None:
+    assert findings(GF_ACTION=action).consistent
+
+
+@pytest.mark.parametrize(
+    ("action", "meaning"),
+    [(0, "None"), (1, "Warning"), (4, "Terminate"), (6, "unknown value"), (-1, "unknown value")],
+)
+def test_other_breach_actions_refuse(action, meaning) -> None:
+    report = findings(GF_ACTION=action)
+    assert not report.consistent
+    assert any(f"GF_ACTION = {action} ({meaning})" in r for r in report.refusals), report.refusals
+
+
+def test_fully_disabled_geofence_reports_every_reason() -> None:
     report = findings(GF_MAX_HOR_DIST=0.0, GF_MAX_VER_DIST=0.0, GF_ACTION=0)
-    assert report.consistent
-    assert len(report.notes) == 3
-    assert any("GF_MAX_VER_DIST = 0" in n and "altitude ceiling" in n for n in report.notes)
-    assert any("GF_ACTION = 0" in n for n in report.notes)
+    assert len(report.refusals) == 3
 
 
 @pytest.mark.parametrize(
@@ -115,11 +141,17 @@ def test_missing_parameter_refuses(name) -> None:
     assert any(name in r for r in report.refusals)
 
 
-def test_x500_sitl_settings_are_consistent_with_documented_px4_defaults() -> None:
+def test_documented_px4_defaults_refuse_until_a_geofence_is_set() -> None:
     report = px4_limit_findings(PX4_DEFAULTS, X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS)
-    assert report.consistent
-    # Default PX4 does not enforce the companion distance/ceiling: reported, not hidden.
-    assert len(report.notes) == 2
+    assert not report.consistent
+    assert len(report.refusals) == 2  # horizontal and vertical geofence disabled
+
+
+def test_x500_sitl_settings_pass_with_the_checklist_geofence() -> None:
+    # Values from simulation/mavsdk/SITL_SESSION_CHECKLIST.md (simulator settings).
+    sitl = {**PX4_DEFAULTS, "GF_MAX_HOR_DIST": 150.0, "GF_MAX_VER_DIST": 40.0, "GF_ACTION": 3}
+    report = px4_limit_findings(sitl, X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS)
+    assert report.consistent, report.refusals
 
 
 def test_invalid_companion_limits_raise_before_comparing() -> None:
@@ -171,7 +203,13 @@ def test_failed_and_slow_reads_become_refusals_not_passes() -> None:
     assert "BAT_LOW_THR not read as a number: read failed (RuntimeError" in text
 
 
-def test_consistent_vehicle_returns_report_with_notes() -> None:
-    params = FakeParams(PX4_DEFAULTS)
+def test_consistent_vehicle_returns_report() -> None:
+    params = FakeParams(ENFORCED)
     report = asyncio.run(require_px4_limits_consistent(params.vehicle(), MISSION, PREFLIGHT, 1.0))
-    assert report.consistent and len(report.notes) == 2
+    assert report.consistent
+
+
+def test_vehicle_with_px4_default_geofence_is_refused() -> None:
+    params = FakeParams(PX4_DEFAULTS)
+    with pytest.raises(Px4LimitsRefused, match="GF_MAX_HOR_DIST = 0"):
+        asyncio.run(require_px4_limits_consistent(params.vehicle(), MISSION, PREFLIGHT, 1.0))

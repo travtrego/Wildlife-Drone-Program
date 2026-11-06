@@ -20,12 +20,16 @@ Rules (implementation choices, not owner requirements)
 ------------------------------------------------------
 - Every parameter must be read and be a finite number. An unreadable, missing,
   non-numeric or negative value is a refusal, never a pass.
-- ``GF_MAX_HOR_DIST`` / ``GF_MAX_VER_DIST`` (m): when enabled (> 0), the
+- ``GF_MAX_HOR_DIST`` / ``GF_MAX_VER_DIST`` (m): must be enabled (> 0) and the
   companion distance-from-home / ceiling must be at or below them. ``0`` means
-  PX4 does not enforce that limit (PX4 default); this is reported as a note,
-  not a refusal, because the companion limit then cannot conflict with it.
-  Whether a disabled PX4 geofence should refuse is an open owner decision.
-- ``GF_ACTION`` = 0 (no action on breach) is reported as a note.
+  PX4 does not enforce that limit (PX4 default) and is a **refusal**: without
+  it there is no PX4 backstop behind the companion limit (owner decision
+  2026-11-06).
+- ``GF_ACTION`` must make PX4 act on a breach: Hold (2), Return (3) or Land
+  (5). None (0) and Warning (1) do not stop the vehicle and refuse. Terminate
+  (4) and any other value also refuse; whether Terminate is acceptable on a
+  real aircraft is not decided here. The numeric meanings are from PX4
+  documentation as known to this change, not read from the SITL build.
 - ``MPC_XY_VEL_MAX`` (m/s, must be > 0): the companion max speed must be at or
   below it, otherwise PX4 would cap the flown speed below the verified one.
 - ``BAT_LOW_THR`` (fraction, must be in (0, 1)): the companion battery minimum
@@ -66,6 +70,18 @@ PX4_LIMIT_PARAMS: dict[str, str] = {
     "BAT_LOW_THR": "float",
 }
 
+# PX4 GF_ACTION values (PX4 documentation; not read from the SITL build).
+GF_ACTION_NAMES: dict[int, str] = {
+    0: "None",
+    1: "Warning",
+    2: "Hold",
+    3: "Return",
+    4: "Terminate",
+    5: "Land",
+}
+# Breach actions that make PX4 itself stop the mission (owner decision 2026-11-06).
+GF_ACTIONS_ACCEPTED: frozenset[int] = frozenset({2, 3, 5})
+
 
 class Px4LimitsRefused(RuntimeError):
     """The companion withheld the mission: its limits contradict PX4's."""
@@ -81,7 +97,6 @@ class Px4LimitReport:
 
     values: dict[str, object]
     refusals: tuple[str, ...]
-    notes: tuple[str, ...]
 
     @property
     def consistent(self) -> bool:
@@ -107,7 +122,6 @@ def _check_geofence(
     companion: float,
     what: str,
     refusals: list[str],
-    notes: list[str],
 ) -> None:
     px4 = _number(values, name, refusals)
     if px4 is None:
@@ -115,7 +129,10 @@ def _check_geofence(
     if px4 < 0.0:
         refusals.append(f"PX4 {name} is negative ({px4:g})")
     elif px4 == 0.0:
-        notes.append(f"PX4 {name} = 0: PX4 does not enforce the {what} ({companion:g} m)")
+        refusals.append(
+            f"PX4 {name} = 0: PX4 does not enforce the {what} ({companion:g} m); "
+            f"set a PX4 geofence at or above it"
+        )
     elif companion > px4:
         refusals.append(f"companion {what} {companion:g} m is looser than PX4 {name} {px4:g} m")
 
@@ -130,7 +147,6 @@ def px4_limit_findings(
     mission_limits.validate()
     preflight_limits.validate()
     refusals: list[str] = []
-    notes: list[str] = []
 
     _check_geofence(
         values,
@@ -138,7 +154,6 @@ def px4_limit_findings(
         mission_limits.max_distance_from_home_m,
         "distance-from-home limit",
         refusals,
-        notes,
     )
     _check_geofence(
         values,
@@ -146,15 +161,18 @@ def px4_limit_findings(
         mission_limits.max_relative_altitude_m,
         "altitude ceiling",
         refusals,
-        notes,
     )
 
     action = values.get("GF_ACTION")
     if isinstance(action, bool) or not isinstance(action, int):
         detail = f": {action}" if isinstance(action, str) else ""
         refusals.append(f"PX4 GF_ACTION not read as an integer{detail}")
-    elif action == 0:
-        notes.append("PX4 GF_ACTION = 0: PX4 takes no action on a geofence breach")
+    elif action not in GF_ACTIONS_ACCEPTED:
+        meaning = GF_ACTION_NAMES.get(action, "unknown value")
+        refusals.append(
+            f"PX4 GF_ACTION = {action} ({meaning}): accepted breach actions are "
+            + ", ".join(f"{GF_ACTION_NAMES[a]} ({a})" for a in sorted(GF_ACTIONS_ACCEPTED))
+        )
 
     speed = _number(values, "MPC_XY_VEL_MAX", refusals)
     if speed is not None:
@@ -176,7 +194,7 @@ def px4_limit_findings(
                 f"below PX4 BAT_LOW_THR {low:.0%}"
             )
 
-    return Px4LimitReport(values=dict(values), refusals=tuple(refusals), notes=tuple(notes))
+    return Px4LimitReport(values=dict(values), refusals=tuple(refusals))
 
 
 async def read_px4_limit_params(drone: Any, timeout_s: float) -> dict[str, object]:

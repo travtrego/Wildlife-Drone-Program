@@ -2,7 +2,7 @@
 
 A plan for one laptop session (about 45–60 minutes). **Nothing here has been run yet.** Every "expected" line is what the unit-tested code should do, written down before the run so the result can be compared against it. PX4 commands marked *(unverified)* come from PX4 documentation and memory, not from a run on this setup. If PX4 refuses one or prints something unexpected, write down exactly what it said. That is a useful result too.
 
-Simulation only. Do not connect a real aircraft, radio or MAVLink bridge. Do not disable arming checks or failsafes. The only parameters changed below are simulator settings (`SIM_BAT_*`) and PX4's failure-injection switch (`SYS_FAILURE_EN`). Reset them at the end.
+Simulation only. Do not connect a real aircraft, radio or MAVLink bridge. Do not disable arming checks or failsafes. The only parameters changed below are simulator settings (`SIM_BAT_*`), PX4's failure-injection switch (`SYS_FAILURE_EN`) and the SITL geofence (`GF_*`, which *enables* a PX4 limit). Reset them at the end.
 
 ## 0. Setup and versions (record once)
 
@@ -28,6 +28,16 @@ HEADLESS=1 make px4_sitl gz_x500
 ~~~
 
 Wait for "Startup script returned successfully". Terminal 1 is now the PX4 shell (`pxh>`), where the `commander ...` lines below are typed.
+
+Before any `waypoint_mission_flight` run, turn on a PX4 geofence. The flight script refuses the mission while the PX4 geofence is disabled (`0`, the PX4 default) or `GF_ACTION` is not Hold/Return/Land (owner decision 2026-11-06). These are **simulator settings** at or above the X500 SITL companion limits (100 m, 30 m), not values for a real aircraft:
+
+~~~text
+param set GF_MAX_HOR_DIST 150
+param set GF_MAX_VER_DIST 40
+param set GF_ACTION 3
+~~~
+
+*(unverified: parameter names and `GF_ACTION` numbering are from PX4 documentation, not checked against this build.)* Check with `param show GF_*` and record the values. If the script refuses with `GF_... = 0`, this step was missed or did not stick after a restart. At the end of the session: `param reset GF_MAX_HOR_DIST`, `param reset GF_MAX_VER_DIST`, `param reset GF_ACTION`.
 
 After each run, record the newest ULog's name and checksum:
 
