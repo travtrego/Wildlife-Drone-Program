@@ -89,10 +89,16 @@ class MissionTelemetryCombiner:
     whether a sample is valid, so malformed telemetry never refreshes it.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, observer: Callable[[MissionStream, Any, float], None] | None = None
+    ) -> None:
         self._values: dict[MissionStream, Any] = {}
         self._times: dict[MissionStream, float] = {}
         self.stream_errors: dict[MissionStream, str] = {}
+        # Read-only hook (e.g. ``MissionTrace.observe``) called with every
+        # accepted update; it cannot change what the monitor sees.
+        self._observer = observer
+        self.observer_error: str | None = None
 
     def update_flight_mode(self, mode: object, now_s: float) -> None:
         self._set(MissionStream.FLIGHT_MODE, mode, now_s)
@@ -134,6 +140,12 @@ class MissionTelemetryCombiner:
             return  # out-of-order delivery; keep the newer value
         self._values[stream] = value
         self._times[stream] = now_s
+        if self._observer is not None:
+            try:
+                self._observer(stream, value, now_s)
+            except Exception as exc:  # observation must never stop monitoring
+                self.observer_error = f"{type(exc).__name__}: {exc}"
+                self._observer = None
 
 
 async def _pump(
@@ -190,8 +202,12 @@ async def run_monitor(
     clock: Callable[[], float],
     check_interval_s: float,
     sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+    on_status: Callable[[MissionStatus, float], None] | None = None,
 ) -> MissionStatus:
     """Feed new samples and periodic checks until the monitor is terminal.
+
+    ``on_status`` (read-only, e.g. ``MissionTrace.monitor_status``) receives
+    each checked status with its check time.
 
     ``monitor.start(started_at_s)`` must already have been called. Termination
     is guaranteed as long as ``clock`` advances: the monitor's start, item,
@@ -207,7 +223,13 @@ async def run_monitor(
         if sample is not None and sample.time_s >= started_at_s and sample != last_fed:
             monitor.update(sample)
             last_fed = sample
-        status = monitor.check(clock())
+        now = clock()
+        status = monitor.check(now)
+        if on_status is not None:
+            try:
+                on_status(status, now)
+            except Exception:  # observation must never stop monitoring
+                on_status = None
         if status.is_terminal:
             return status
         await sleep(check_interval_s)
