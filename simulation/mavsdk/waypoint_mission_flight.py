@@ -15,6 +15,9 @@ listener (same guard as the smoke mission). Sequence:
 5. Re-run the preflight gate, then arm (PX4 arming checks stay enabled) and
    request ``start_mission``.
 6. Run :class:`MissionExecutionMonitor` on the combined telemetry until it ends.
+   A read-only :class:`MissionTrace` prints every mode/armed/in-air/progress
+   and monitor change as it happens and a summary (stream rates, item times,
+   margins against the timing placeholders) when the script exits.
 7. Request ``RETURN_TO_LAUNCH`` only if :func:`follow_up_request` allows it
    (mission completed, or the monitor recommended RTL, with fresh telemetry
    still showing an armed, airborne vehicle in MISSION/HOLD), then wait for
@@ -54,6 +57,7 @@ from x500.flight.mission_telemetry import (
     run_monitor,
     subscribe_mission_telemetry,
 )
+from x500.flight.mission_trace import MissionTrace
 from x500.flight.monitor_settings import x500_sitl_monitor_settings
 from x500.flight.preflight import PreflightLimits, require_preflight_ready
 from x500.flight.settings import X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS
@@ -78,6 +82,7 @@ class FlightResult:
     follow_up_reason: str
     landed: bool
     stream_errors: dict
+    trace_lines: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
@@ -95,6 +100,7 @@ async def fly_waypoint_mission(
     check_interval_s: float = CHECK_INTERVAL_S,
     landing_timeout_s: float = LANDING_TIMEOUT_S,
     preflight_limits: PreflightLimits = X500_SITL_PREFLIGHT_LIMITS,
+    emit: Callable[[str], None] | None = print,
 ) -> FlightResult:
     """Fly one verified mission on an already connected *simulated* vehicle.
 
@@ -109,8 +115,12 @@ async def fly_waypoint_mission(
     settings = settings_for(len(items))
     monitor = MissionExecutionMonitor(settings)
 
-    combiner = MissionTelemetryCombiner()
+    # Read-only trace: prints each mode/armed/in-air/progress/monitor change and
+    # summarizes stream rates, item times and placeholder margins at the end.
+    trace = MissionTrace(emit=emit)
+    combiner = MissionTelemetryCombiner(observer=trace.observe)
     tasks = subscribe_mission_telemetry(drone, combiner, clock)
+    trace_lines: tuple[str, ...] = ()
     try:
         await upload_and_verify(drone, items, home, mission_module)
         # Upload/read-back takes time; check again immediately before arming.
@@ -120,8 +130,11 @@ async def fly_waypoint_mission(
         await drone.mission.start_mission()
         started_at = clock()
         monitor.start(started_at)
+        trace.mark_start(started_at)
         print("Mission start requested; monitoring ...")
-        status = await run_monitor(monitor, combiner, started_at, clock, check_interval_s)
+        status = await run_monitor(
+            monitor, combiner, started_at, clock, check_interval_s, on_status=trace.monitor_status
+        )
         reason = status.reason.value if status.reason else ""
         print(
             f"Monitor: {status.state.value} {reason} {status.detail} "
@@ -137,17 +150,26 @@ async def fly_waypoint_mission(
             landed = True
         else:
             print(f"No follow-up command: {follow.reason}")
+        trace_lines = tuple(trace.summary_lines(settings))
         return FlightResult(
             status=status,
             rtl_requested=follow.request_return_to_launch,
             follow_up_reason=follow.reason,
             landed=landed,
             stream_errors={s.value: d for s, d in combiner.stream_errors.items()},
+            trace_lines=trace_lines,
         )
     finally:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if emit is not None:
+            # Printed on every exit, including refusals and exceptions after
+            # subscription, so a failed run still shows what was received.
+            for line in trace_lines or trace.summary_lines(settings):
+                emit(line)
+            if combiner.observer_error:
+                emit(f"Trace stopped early: {combiner.observer_error}")
 
 
 async def run_flight(
