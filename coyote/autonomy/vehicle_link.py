@@ -38,9 +38,9 @@ Implementation choices (not owner requirements)
   separately. Without a source, ``TelemetryTracker.failsafe_active`` returns
   ``None`` and the authority refuses every grant, which is the conservative
   outcome.
-* **Grant transport is out of scope.** How the operator's grant command
-  reaches the Jetson is not chosen; callers pass grants to
-  ``DelegationAuthority.request_grant`` themselves.
+* **Grant transport is separate.** A candidate ``COMMAND_LONG`` transport
+  lives in ``grant_transport.py`` and must be started separately; otherwise
+  callers pass grants to ``DelegationAuthority.request_grant`` themselves.
 
 Authority boundary
 ------------------
