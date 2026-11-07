@@ -19,6 +19,14 @@ This module is the deterministic part of that tool:
   accepts (same command id, action codes and target as
   :class:`~coyote.autonomy.grant_transport.GrantTransportConfig`).
 
+* :func:`interpret_grant_ack` reads the companion's candidate ``COMMAND_ACK``
+  reply (:func:`coyote.autonomy.grant_transport.command_ack_fields`) and says
+  whether it confirms or refuses the command just sent. A reply is matched
+  only when it comes from the configured companion, is addressed to this
+  ground station, names the grant command id and echoes the expected
+  sequence; anything else is ``UNMATCHED`` and must not be shown as a
+  confirmation. No reply at all means "unknown", never "granted".
+
 Not here, on purpose: opening a MAVLink connection and sending. The ground
 tool's link, its MAVLink system/component id (must match the companion's
 configured ground-station id, default 255/190) and whether PX4 forwards the
@@ -30,13 +38,18 @@ Unit-tested only.
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import Any
 
 from coyote.autonomy.grant_transport import (
     ACTION_GRANT,
     ACTION_REVOKE,
+    MAV_RESULT_ACCEPTED,
     MAX_SEQUENCE,
     GrantTransportConfig,
 )
@@ -136,3 +149,76 @@ def next_grant_fields(
 
     sequence = store.next()
     return sequence, grant_command_fields(sequence, config)
+
+
+class AckOutcome(Enum):
+    CONFIRMED = "confirmed"  # companion accepted the command when it handled it
+    REFUSED = "refused"  # companion answered and did not accept it
+    UNMATCHED = "unmatched"  # some other COMMAND_ACK; not an answer to this send
+
+
+@dataclass(frozen=True)
+class GrantAck:
+    outcome: AckOutcome
+    result: int | None
+    detail: str
+
+
+def _ack_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    return None
+
+
+def interpret_grant_ack(
+    message: Any, expected_sequence: int, config: GrantTransportConfig | None = None
+) -> GrantAck | None:
+    """Classify one MAVSDK ``MavlinkMessage`` against the command just sent.
+
+    ``expected_sequence`` is the grant's sequence, or 0 for a revoke (the
+    companion echoes 0 when a command has no sequence). Returns ``None`` when
+    the message is not a ``COMMAND_ACK`` for the configured command id.
+
+    ``CONFIRMED`` means the companion accepted the command at that moment. It
+    does not mean delegation is still in force: the companion can revoke at
+    any time and reports that through its STATUSTEXT alerts. A revoke reply is
+    informational only, since the operator's revoke never depends on it.
+    """
+
+    cfg = config or GrantTransportConfig()
+    cfg.validate()
+    if isinstance(expected_sequence, bool) or not isinstance(expected_sequence, int):
+        raise ValueError("expected_sequence must be an integer")
+    if not 0 <= expected_sequence <= MAX_SEQUENCE:
+        raise ValueError("expected_sequence must be from 0 (revoke) to 2**24")
+    if getattr(message, "message_name", None) != "COMMAND_ACK":
+        return None
+    try:
+        fields = json.loads(getattr(message, "fields_json", ""))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(fields, dict) or _ack_int(fields.get("command")) != cfg.command_id:
+        return None
+
+    def unmatched(detail: str) -> GrantAck:
+        return GrantAck(AckOutcome.UNMATCHED, _ack_int(fields.get("result")), detail)
+
+    source = (getattr(message, "system_id", None), getattr(message, "component_id", None))
+    if source != (cfg.companion_system_id, cfg.companion_component_id):
+        return unmatched(f"reply from {source[0]}/{source[1]}, not the companion")
+    target = (_ack_int(fields.get("target_system")), _ack_int(fields.get("target_component")))
+    if target != (cfg.ground_station_system_id, cfg.ground_station_component_id):
+        return unmatched(f"reply addressed to {target[0]}/{target[1]}, not this ground station")
+    echoed = _ack_int(fields.get("result_param2"))
+    if echoed != expected_sequence:
+        return unmatched(f"reply for sequence {echoed!r}, expected {expected_sequence}")
+    result = _ack_int(fields.get("result"))
+    if result is None:
+        return unmatched(f"reply result {fields.get('result')!r} is not a whole number")
+    if result == MAV_RESULT_ACCEPTED:
+        return GrantAck(AckOutcome.CONFIRMED, result, "companion accepted")
+    return GrantAck(AckOutcome.REFUSED, result, f"companion refused (MAV_RESULT {result})")
