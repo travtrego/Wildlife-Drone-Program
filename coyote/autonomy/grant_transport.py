@@ -41,9 +41,12 @@ What this does **not** establish
   observed**. The default ids (ground station 255/190, companion 1/191) are
   common MAVLink conventions, not Coyote parameters; they must match the
   ground tool and the MAVSDK configuration actually used.
-* No ``COMMAND_ACK`` is sent, so a ground tool may retransmit. A retransmitted
-  grant reuses its sequence and is refused as "not new" without changing
-  state; the first copy's result stands.
+* A ``COMMAND_ACK`` reply is a **candidate** (:func:`command_ack_fields`,
+  :func:`mavsdk_ack_sender`, the ``send_ack`` hook of
+  :func:`pump_ground_commands`); it is not wired into any script yet. Without
+  it a ground tool may retransmit. A retransmitted grant reuses its sequence
+  and is refused as "not new" without changing state; the first copy's result
+  stands.
 * Ground tool (owner decision 2026-11-06): a small ground-side script/app
   that increments the sequence on every grant; a fixed QGroundControl button
   is not used. Its sequence keeping and message fields are in
@@ -53,10 +56,11 @@ If the ``COMMAND_LONG`` subscription ends or raises, the operator can no longer
 revoke through this channel, so delegation is revoked with
 ``COMMAND_LINK_LOST`` (implementation choice; sticky like every revocation).
 
-Authority boundary: nothing here sends a MAVLink message or commands the
-vehicle. A grant only sets the companion's ``operator_delegated`` flag through
-the authority, which still refuses it unless PX4 state is fresh, failsafe-free
-and not pilot- or recovery-controlled. Unit-tested only.
+Authority boundary: nothing here commands the vehicle. The only message this
+module can send is the optional ``COMMAND_ACK`` reply to the ground station.
+A grant only sets the companion's ``operator_delegated`` flag through the
+authority, which still refuses it unless PX4 state is fresh, failsafe-free and
+not pilot- or recovery-controlled. Unit-tested only.
 """
 
 from __future__ import annotations
@@ -64,7 +68,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -120,6 +124,9 @@ class GroundCommand:
     kind: GroundCommandKind
     sequence: int | None = None
     detail: str = ""
+    # False when the message came from an unexpected source or was addressed to
+    # someone else (including broadcast): the companion does not answer those.
+    ackable: bool = True
 
 
 def _whole_number(value: object) -> int | None:
@@ -152,18 +159,18 @@ def decode_ground_command(
     if not isinstance(fields, dict) or _whole_number(fields.get("command")) != cfg.command_id:
         return None
 
-    def reject(detail: str) -> GroundCommand:
-        return GroundCommand(GroundCommandKind.REJECTED, None, detail)
+    def reject(detail: str, ackable: bool = True) -> GroundCommand:
+        return GroundCommand(GroundCommandKind.REJECTED, None, detail, ackable)
 
     source = (getattr(message, "system_id", None), getattr(message, "component_id", None))
     if source != (cfg.ground_station_system_id, cfg.ground_station_component_id):
-        return reject(f"command from unexpected source {source[0]}/{source[1]}")
+        return reject(f"command from unexpected source {source[0]}/{source[1]}", False)
     target = (
         _whole_number(fields.get("target_system")),
         _whole_number(fields.get("target_component")),
     )
     if target != (cfg.companion_system_id, cfg.companion_component_id):
-        return reject(f"command addressed to {target[0]}/{target[1]}, not the companion")
+        return reject(f"command addressed to {target[0]}/{target[1]}, not the companion", False)
 
     action = _whole_number(fields.get("param1"))
     if action == ACTION_REVOKE:
@@ -191,7 +198,111 @@ def apply_ground_command(
     return GrantResult(False, f"command rejected: {command.detail}")
 
 
+# MAVLink MAV_RESULT values used in the reply (common.xml).
+MAV_RESULT_ACCEPTED = 0
+MAV_RESULT_DENIED = 2
+DEFAULT_ACK_TIMEOUT_S = 1.0  # MODEL INPUT / placeholder, like WatchConfig.send_timeout_s
+
+
+def command_ack_fields(
+    command: GroundCommand, result: GrantResult, config: GrantTransportConfig | None = None
+) -> dict[str, int] | None:
+    """``COMMAND_ACK`` fields answering one decoded command, or ``None``.
+
+    Implementation choice (candidate, not an owner requirement):
+
+    * accepted grant (including "already delegated") -> ``MAV_RESULT_ACCEPTED``;
+    * refused grant (stale or ineligible vehicle, old sequence, ...) ->
+      ``MAV_RESULT_DENIED``;
+    * revoke -> ``MAV_RESULT_ACCEPTED``: the companion is not delegated after
+      it, whatever it was before;
+    * a command rejected while decoding (bad action or sequence) ->
+      ``MAV_RESULT_DENIED``;
+    * a command from an unexpected source or addressed elsewhere -> ``None``,
+      no reply.
+
+    ``result_param2`` echoes the grant sequence (0 when there is none) so the
+    ground tool can tell this reply apart from any other ``COMMAND_ACK`` for
+    the same command id. The reply describes the moment the command was
+    handled; it does not say that delegation is still in force later.
+    Revocations are reported separately by the STATUSTEXT alerts.
+    """
+
+    cfg = config or GrantTransportConfig()
+    if not command.ackable:
+        return None
+    if command.kind is GroundCommandKind.GRANT:
+        code = MAV_RESULT_ACCEPTED if result.accepted else MAV_RESULT_DENIED
+    elif command.kind is GroundCommandKind.REVOKE:
+        code = MAV_RESULT_ACCEPTED
+    else:
+        code = MAV_RESULT_DENIED
+    return {
+        "command": cfg.command_id,
+        "result": code,
+        "progress": 0,
+        "result_param2": command.sequence or 0,
+        "target_system": cfg.ground_station_system_id,
+        "target_component": cfg.ground_station_component_id,
+    }
+
+
+AckSender = Callable[[dict[str, int]], Awaitable[None]]
+
+
+def mavsdk_ack_sender(drone: Any, config: GrantTransportConfig | None = None) -> AckSender:
+    """Send ``COMMAND_ACK`` fields through MAVSDK 3.x ``mavlink_direct.send_message``.
+
+    The message carries the companion's configured ids as its source. Whether
+    MAVSDK sends it with those ids, whether PX4 forwards it to the ground link
+    and whether MAVSDK also answers the ``COMMAND_LONG`` itself are **not
+    observed**. ``send_message`` raises on failure; the pump records that.
+    """
+
+    cfg = config or GrantTransportConfig()
+    cfg.validate()
+
+    async def send(fields: dict[str, int]) -> None:
+        from mavsdk.mavlink_direct import MavlinkMessage  # unit tests need no MAVSDK
+
+        await drone.mavlink_direct.send_message(
+            MavlinkMessage(
+                "COMMAND_ACK",
+                cfg.companion_system_id,
+                cfg.companion_component_id,
+                int(fields["target_system"]),
+                int(fields["target_component"]),
+                json.dumps(fields),
+            )
+        )
+
+    return send
+
+
 CommandLogger = Callable[[float, GroundCommand, GrantResult], None]
+AckLogger = Callable[[float, dict[str, int], str | None], None]
+
+
+async def _send_ack(
+    send_ack: AckSender,
+    fields: dict[str, int],
+    timeout_s: float,
+    clock: Callable[[], float],
+    on_ack: AckLogger | None,
+) -> None:
+    """One bounded send attempt. Failure is reported, never retried, never revokes."""
+
+    error: str | None = None
+    try:
+        await asyncio.wait_for(send_ack(fields), timeout_s)
+    except asyncio.CancelledError:
+        raise
+    except TimeoutError:
+        error = f"ack send timed out after {timeout_s:g} s"
+    except Exception as exc:  # report and carry on; delegation state is already set
+        error = f"{type(exc).__name__}: {exc}"
+    if on_ack is not None:
+        on_ack(clock(), fields, error)
 
 
 async def pump_ground_commands(
@@ -201,17 +312,29 @@ async def pump_ground_commands(
     stream_errors: dict[Any, str],
     config: GrantTransportConfig | None = None,
     on_command: CommandLogger | None = None,
+    send_ack: AckSender | None = None,
+    ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
+    on_ack: AckLogger | None = None,
 ) -> None:
     """Feed ``authority`` from ``drone.mavlink_direct`` ``COMMAND_LONG`` messages.
 
-    Read-only subscription. ``on_command(now, command, result)`` is called for
-    every grant, revoke or rejected command (for logging). If the stream ends
-    or raises, the reason is stored under :data:`COMMAND_SOURCE_KEY` and the
-    authority revokes with ``COMMAND_LINK_LOST``.
+    ``on_command(now, command, result)`` is called for every grant, revoke or
+    rejected command (for logging). If the stream ends or raises, the reason is
+    stored under :data:`COMMAND_SOURCE_KEY` and the authority revokes with
+    ``COMMAND_LINK_LOST``.
+
+    Without ``send_ack`` this is read-only. With it, each answerable command
+    gets one ``COMMAND_ACK`` attempt **after** the authority has handled it,
+    bounded by ``ack_timeout_s``; ``on_ack(now, fields, error)`` reports the
+    outcome (``error`` is ``None`` when the transport accepted it). A failed or
+    slow reply never changes delegation state and is not retried; a slow reply
+    can delay handling of the next command by at most ``ack_timeout_s``.
     """
 
     cfg = config or GrantTransportConfig()
     cfg.validate()
+    if not (math.isfinite(ack_timeout_s) and ack_timeout_s > 0.0):
+        raise ValueError("ack_timeout_s must be a positive finite number")
     try:
         async for message in drone.mavlink_direct.message("COMMAND_LONG"):
             command = decode_ground_command(message, cfg)
@@ -221,6 +344,10 @@ async def pump_ground_commands(
             result = apply_ground_command(command, authority, now)
             if on_command is not None:
                 on_command(now, command, result)
+            if send_ack is not None:
+                fields = command_ack_fields(command, result, cfg)
+                if fields is not None:
+                    await _send_ack(send_ack, fields, ack_timeout_s, clock, on_ack)
         reason = "stream ended"
     except asyncio.CancelledError:
         raise
@@ -237,9 +364,15 @@ def subscribe_ground_commands(
     stream_errors: dict[Any, str],
     config: GrantTransportConfig | None = None,
     on_command: CommandLogger | None = None,
+    send_ack: AckSender | None = None,
+    ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
+    on_ack: AckLogger | None = None,
 ) -> asyncio.Task:
     """Start :func:`pump_ground_commands` as a task. Caller cancels it."""
 
     return asyncio.create_task(
-        pump_ground_commands(drone, authority, clock, stream_errors, config, on_command)
+        pump_ground_commands(
+            drone, authority, clock, stream_errors, config, on_command,
+            send_ack, ack_timeout_s, on_ack,
+        )
     )
