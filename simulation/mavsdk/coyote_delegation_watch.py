@@ -14,8 +14,13 @@ What it does:
 2. Runs the R6 delegation watch. Its only outbound MAVLink is the
    ``STATUSTEXT`` revocation alert (``--no-status-text`` prints it instead).
 3. Reads keyboard lines: ``g`` = local stand-in for the ground-station grant
-   command (the real grant transport is not chosen), ``r`` = operator revoke,
-   ``q`` = quit. A grant only changes local state; nothing is forwarded to PX4.
+   command, ``r`` = local operator revoke, ``q`` = quit. With
+   ``--grant-source mavlink`` the ``g`` key is disabled and grants/revokes come
+   only from the candidate MAVLink transport (``coyote.autonomy.grant_transport``),
+   sent by ``simulation.mavsdk.coyote_ground_sender``; the watch then connects
+   as the companion (default MAVLink id 1/191, a model input) so the command can
+   be addressed to it. Either way a grant only changes local state; nothing is
+   forwarded to PX4.
 4. Prints a status line every second and every change, then a summary of what
    was observed: stream rates, the raw HEARTBEAT ``system_status`` values and
    their JSON form, failsafe mapping results and every revocation and alert.
@@ -49,6 +54,11 @@ from coyote.autonomy.failsafe_source import (
     failsafe_from_heartbeat,
     subscribe_failsafe_heartbeat,
 )
+from coyote.autonomy.grant_transport import (
+    GrantTransportConfig,
+    GroundCommand,
+    subscribe_ground_commands,
+)
 from coyote.autonomy.ground_alerts import GroundAlertOutbox, StatusMessage
 from coyote.autonomy.telemetry import TelemetryTracker
 from coyote.autonomy.vehicle_link import (
@@ -64,6 +74,7 @@ from simulation.mavsdk.smoke_mission import _wait_for_connection
 STATUS_INTERVAL_S = 1.0
 DEFAULT_DURATION_S = 900.0
 TELEMETRY_STREAMS = ("flight_mode", "armed", "in_air", "position", "battery")
+GRANT_SOURCES = ("keyboard", "mavlink")
 
 
 # ----------------------------------------------------------- observation log
@@ -116,7 +127,7 @@ class ObservationLog:
 
     def summary_lines(self) -> list[str]:
         lines = ["Stream messages (count, mean rate):"]
-        for name in (*TELEMETRY_STREAMS, "autopilot_heartbeat"):
+        for name in (*TELEMETRY_STREAMS, "autopilot_heartbeat", "command_long"):
             rate = self.rate_hz(name)
             shown = f"{rate:.2f} Hz" if rate is not None else "n/a"
             lines.append(f"  {name:20s} {self.message_counts.get(name, 0):6d}  {shown}")
@@ -150,7 +161,9 @@ def observing_drone(
     """Read-only facade: same streams as ``drone``, counted into ``log``.
 
     Exposes only ``telemetry.<five streams>`` and ``mavlink_direct.message``;
-    no command plugin is reachable through it.
+    no command plugin is reachable through it. ``HEARTBEAT`` messages are
+    logged as heartbeats; ``COMMAND_LONG`` and any other subscribed message
+    are only counted.
     """
 
     telemetry = SimpleNamespace(
@@ -160,13 +173,16 @@ def observing_drone(
         }
     )
 
-    async def heartbeat_messages(message_name: str) -> AsyncIterator[Any]:
+    async def direct_messages(message_name: str) -> AsyncIterator[Any]:
         async for message in drone.mavlink_direct.message(message_name):
-            log.heartbeat(message, clock(), heartbeat_config)
+            if message_name == "HEARTBEAT":
+                log.heartbeat(message, clock(), heartbeat_config)
+            else:
+                log.message(message_name.lower(), clock())
             yield message
 
     return SimpleNamespace(
-        telemetry=telemetry, mavlink_direct=SimpleNamespace(message=heartbeat_messages)
+        telemetry=telemetry, mavlink_direct=SimpleNamespace(message=direct_messages)
     )
 
 
@@ -182,6 +198,20 @@ def status_line(tracker: TelemetryTracker, authority: DelegationAuthority, now_s
         f"alt={snap.relative_altitude_m:.1f}m batt={battery_text} age={age_text} "
         f"failsafe={tracker.failsafe_active(now_s)} delegated={authority.delegated(now_s)}"
     )
+
+
+def command_reporter(log: ObservationLog) -> Callable[[float, GroundCommand, Any], None]:
+    """Log every decoded ground command and what the authority did with it."""
+
+    def on_command(now_s: float, command: GroundCommand, result: Any) -> None:
+        sequence = f" #{command.sequence}" if command.sequence is not None else ""
+        log.event(
+            now_s,
+            f"ground command {command.kind.value}{sequence} ({command.detail}): "
+            f"accepted={result.accepted} ({result.reason})",
+        )
+
+    return on_command
 
 
 def tick_reporter(log: ObservationLog, clock: Callable[[], float]) -> Callable[[WatchTick], None]:
@@ -225,8 +255,10 @@ async def handle_keys(
     log: ObservationLog,
     clock: Callable[[], float],
     stop: asyncio.Event,
+    grant_from_keyboard: bool = True,
 ) -> None:
-    """Apply operator keys. ``g`` is a local stand-in for the grant command."""
+    """Apply operator keys. ``g`` is a local stand-in for the grant command and
+    is disabled when grants come from the MAVLink transport."""
 
     sequence = 0
     while not stop.is_set():
@@ -235,7 +267,9 @@ async def handle_keys(
             return
         key = line.strip().lower()
         now = clock()
-        if key == "g":
+        if key == "g" and not grant_from_keyboard:
+            print("g disabled: send the grant from coyote_ground_sender (--grant-source mavlink)")
+        elif key == "g":
             sequence += 1
             result = authority.request_grant(GrantCommand(sequence, now), now)
             log.event(now, f"grant #{sequence}: accepted={result.accepted} ({result.reason})")
@@ -268,6 +302,8 @@ async def run_watch(
     send_status_text: bool,
     heartbeat_config: HeartbeatSourceConfig,
     holder: dict | None = None,
+    grant_source: str = "keyboard",
+    transport_config: GrantTransportConfig | None = None,
 ) -> ObservationLog:
     """Watch until ``q``, stdin closes or ``duration_s``. ``holder['log']`` is
     set as soon as observation starts, so Ctrl+C can still print the summary."""
@@ -276,15 +312,31 @@ async def run_watch(
     heartbeat_config.validate()
     if not math.isfinite(duration_s) or duration_s <= 0:
         raise ValueError("duration must be a positive number of seconds")
+    if grant_source not in GRANT_SOURCES:
+        raise ValueError(f"grant source must be one of {GRANT_SOURCES}")
+    transport = transport_config or GrantTransportConfig()
+    transport.validate()
     from mavsdk import System  # imported here so unit tests need no MAVSDK
 
     clock = time.monotonic
-    drone = System()
+    if grant_source == "mavlink":
+        # Identify as the companion so the ground command can be addressed to it.
+        drone = System(
+            sysid=transport.companion_system_id, compid=transport.companion_component_id
+        )
+    else:
+        drone = System()
     print(f"Connecting to PX4 SITL at {config.system_address} ...")
     await drone.connect(system_address=config.system_address)
     await _wait_for_connection(drone, config.connection_timeout_s)
     print("Connected. Watch only: this script sends no flight commands.")
-    print("Keys + Enter: g = grant (local stand-in), r = revoke, q = quit")
+    if grant_source == "mavlink":
+        print(
+            "Grants come from coyote_ground_sender (MAVLink). "
+            "Keys + Enter: r = local revoke, q = quit"
+        )
+    else:
+        print("Keys + Enter: g = grant (local stand-in), r = revoke, q = quit")
 
     log = ObservationLog(started_s=clock())
     if holder is not None:
@@ -300,6 +352,12 @@ async def run_watch(
     tasks.append(
         subscribe_failsafe_heartbeat(facade, tracker, clock, stream_errors, heartbeat_config)
     )
+    if grant_source == "mavlink":
+        tasks.append(
+            subscribe_ground_commands(
+                facade, authority, clock, stream_errors, transport, command_reporter(log)
+            )
+        )
     sender = mavsdk_status_text_sender(drone) if send_status_text else print_sender()
     tasks.append(
         asyncio.create_task(
@@ -317,7 +375,11 @@ async def run_watch(
     tasks.append(asyncio.create_task(_status_printer(tracker, authority, clock, stop, log)))
     lines: asyncio.Queue = asyncio.Queue()
     start_stdin_reader(asyncio.get_running_loop(), lines)
-    tasks.append(asyncio.create_task(handle_keys(lines, authority, log, clock, stop)))
+    tasks.append(
+        asyncio.create_task(
+            handle_keys(lines, authority, log, clock, stop, grant_source == "keyboard")
+        )
+    )
     try:
         await asyncio.wait_for(stop.wait(), timeout=duration_s)
     except TimeoutError:
@@ -342,6 +404,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="print revocation alerts instead of sending them as STATUSTEXT",
     )
+    parser.add_argument(
+        "--grant-source",
+        choices=GRANT_SOURCES,
+        default="keyboard",
+        help="keyboard: 'g' stand-in (default); mavlink: COMMAND_LONG from coyote_ground_sender",
+    )
     return parser.parse_args(argv)
 
 
@@ -352,7 +420,12 @@ def main() -> None:
     try:
         asyncio.run(
             run_watch(
-                config, args.duration, not args.no_status_text, HeartbeatSourceConfig(), holder
+                config,
+                args.duration,
+                not args.no_status_text,
+                HeartbeatSourceConfig(),
+                holder,
+                grant_source=args.grant_source,
             )
         )
     except KeyboardInterrupt:
