@@ -25,12 +25,19 @@ listener (same guard as the smoke mission). Sequence:
    margins against the timing placeholders) when the script exits.
 7. Request ``RETURN_TO_LAUNCH`` only if :func:`follow_up_request` allows it
    (mission completed, or the monitor recommended RTL, with fresh telemetry
-   still showing an armed, airborne vehicle in MISSION/HOLD), then wait for
-   landing. Any other outcome sends nothing: PX4 or the pilot owns the vehicle.
+   still showing an armed, airborne vehicle in MISSION/HOLD). Any other outcome
+   sends nothing: PX4 or the pilot owns the vehicle.
+8. After an RTL request, :class:`ReturnLandingMonitor` watches the same
+   telemetry (read-only) until PX4 reports RTL/LAND, lands and disarms, or the
+   watch ends (request not accepted, pilot takeover, PX4 left RTL/LAND, landed
+   but not disarmed, timeout, stale telemetry). It sends nothing further in
+   any case: no retry, no LAND, no disarm.
 
-PASS means the monitor saw the mission complete and the vehicle landed after
-the RTL request, in simulation. One nominal PX4 SITL pass is recorded in
-docs/SITL_VALIDATION_2026-11-01.md; failure paths are unit-tested only.
+PASS means the monitor saw the mission complete and, after the RTL request,
+the return watch saw PX4 enter RTL/LAND, land and disarm, in simulation. One
+nominal PX4 SITL pass (before the return watch existed) is recorded in
+docs/SITL_VALIDATION_2026-11-01.md; failure paths and the return watch are
+unit-tested only.
 """
 
 from __future__ import annotations
@@ -47,7 +54,6 @@ from shared.autonomy.sitl import SitlMissionConfig, load_sitl_config
 from simulation.mavsdk.smoke_mission import (
     _wait_for_connection,
     _wait_for_health,
-    _wait_until_landed,
 )
 from simulation.mavsdk.waypoint_upload_check import _read_home, load_waypoints
 from x500.flight.mission_monitor import (
@@ -63,9 +69,13 @@ from x500.flight.mission_telemetry import (
     subscribe_mission_telemetry,
 )
 from x500.flight.mission_trace import MissionTrace
-from x500.flight.monitor_settings import x500_sitl_monitor_settings
+from x500.flight.monitor_settings import (
+    X500_SITL_RETURN_SETTINGS,
+    x500_sitl_monitor_settings,
+)
 from x500.flight.preflight import PreflightLimits, require_preflight_ready
 from x500.flight.px4_limits import require_px4_limits_consistent
+from x500.flight.return_monitor import ReturnLandingMonitor, ReturnSettings, ReturnStatus
 from x500.flight.settings import X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS
 from x500.flight.waypoint_mission import (
     LocalWaypoint,
@@ -78,7 +88,6 @@ from x500.flight.waypoint_mission import (
 
 # Placeholders for SITL development, not measured values.
 CHECK_INTERVAL_S = 0.2
-LANDING_TIMEOUT_S = 120.0
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,8 @@ class FlightResult:
     landed: bool
     stream_errors: dict
     trace_lines: tuple[str, ...] = ()
+    # Return watch result after an RTL request; None when no RTL was requested.
+    return_status: ReturnStatus | None = None
 
     @property
     def passed(self) -> bool:
@@ -104,7 +115,7 @@ async def fly_waypoint_mission(
     settings_for: Callable[[int], MonitorSettings] = x500_sitl_monitor_settings,
     clock: Callable[[], float] = time.monotonic,
     check_interval_s: float = CHECK_INTERVAL_S,
-    landing_timeout_s: float = LANDING_TIMEOUT_S,
+    return_settings: ReturnSettings = X500_SITL_RETURN_SETTINGS,
     preflight_limits: PreflightLimits = X500_SITL_PREFLIGHT_LIMITS,
     emit: Callable[[str], None] | None = print,
 ) -> FlightResult:
@@ -151,11 +162,25 @@ async def fly_waypoint_mission(
 
         follow = follow_up_request(status, combiner.sample(), clock(), settings.max_telemetry_age_s)
         landed = False
+        return_status: ReturnStatus | None = None
         if follow.request_return_to_launch:
             print("Requesting PX4 RETURN_TO_LAUNCH ...")
             await drone.action.return_to_launch()
-            await _wait_until_landed(drone, landing_timeout_s)
-            landed = True
+            requested_at = clock()
+            watch = ReturnLandingMonitor(return_settings)
+            watch.start(requested_at)
+            return_status = await run_monitor(
+                watch,
+                combiner,
+                requested_at,
+                clock,
+                check_interval_s,
+                on_status=trace.monitor_status,
+            )
+            landed = return_status.landed_and_disarmed
+            reason = return_status.reason.value if return_status.reason else ""
+            # Read-only result; nothing further is sent whatever it says.
+            print(f"Return watch: {return_status.state.value} {reason} {return_status.detail}")
         else:
             print(f"No follow-up command: {follow.reason}")
         trace_lines = tuple(trace.summary_lines(settings))
@@ -164,6 +189,7 @@ async def fly_waypoint_mission(
             rtl_requested=follow.request_return_to_launch,
             follow_up_reason=follow.reason,
             landed=landed,
+            return_status=return_status,
             stream_errors={s.value: d for s, d in combiner.stream_errors.items()},
             trace_lines=trace_lines,
         )
@@ -218,8 +244,10 @@ def main() -> None:
     if result.stream_errors:
         print(f"Telemetry stream problems: {result.stream_errors}")
     if not result.passed:
-        raise SystemExit("FAIL: monitored SITL waypoint mission did not complete and land.")
-    print("PASS: simulated waypoint mission completed, RTL requested, vehicle landed.")
+        raise SystemExit(
+            "FAIL: monitored SITL waypoint mission did not complete, return, land and disarm."
+        )
+    print("PASS: simulated waypoint mission completed, RTL requested, landed and disarmed.")
 
 
 if __name__ == "__main__":

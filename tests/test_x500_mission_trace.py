@@ -10,6 +10,7 @@ import asyncio
 
 import pytest
 from test_x500_mission_telemetry import (  # pytest puts tests/ on sys.path
+    FAST_RETURN,
     LIMITS,
     MISSION_MODULE,
     SQUARE,
@@ -226,7 +227,7 @@ def test_fake_flight_trace_can_be_silenced() -> None:
             health_timeout_s=1.0,
             settings_for=lambda n: settings(expected_item_count=n),
             check_interval_s=0.01,
-            landing_timeout_s=1.0,
+            return_settings=FAST_RETURN,
             emit=None,
         )
     )

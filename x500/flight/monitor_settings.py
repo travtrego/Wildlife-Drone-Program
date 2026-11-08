@@ -10,6 +10,7 @@ simulation. Coyote will pass its own values to the same monitor.
 from __future__ import annotations
 
 from .mission_monitor import MonitorSettings
+from .return_monitor import ReturnSettings
 
 
 def x500_sitl_monitor_settings(expected_item_count: int) -> MonitorSettings:
@@ -27,3 +28,16 @@ def x500_sitl_monitor_settings(expected_item_count: int) -> MonitorSettings:
     )
     settings.validate()
     return settings
+
+
+# Return/landing watch after the RTL request (x500.flight.return_monitor).
+# Placeholders, not measurements or PX4 parameters. PX4 is expected to disarm
+# on its own after landing (COM_DISARM_LAND); that parameter is not read here
+# and the disarm delay has not been observed in SITL.
+X500_SITL_RETURN_SETTINGS = ReturnSettings(
+    accept_timeout_s=5.0,  # placeholder: ~5 flight-mode updates at the observed 1 Hz
+    max_return_time_s=120.0,  # placeholder: the former landing timeout of the SITL script
+    disarm_timeout_s=10.0,  # placeholder: landed -> disarmed
+    max_telemetry_age_s=2.0,  # placeholder: same as the mission monitor
+)
+X500_SITL_RETURN_SETTINGS.validate()
