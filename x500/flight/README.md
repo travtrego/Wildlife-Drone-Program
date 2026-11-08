@@ -18,7 +18,7 @@ Deterministic classifier for a waypoint mission that PX4 is already flying. It n
 | `TELEMETRY_STALE` | No valid sample within the age limit (malformed samples do not count) | none — PX4 link-loss failsafe owns the aircraft |
 | `ITEM_STALLED` / `MISSION_TIMEOUT` | Still in `MISSION` but an item or the whole mission exceeds its time budget | *proposes* `RETURN_TO_LAUNCH`; caller decides, PX4 flies it |
 
-Terminal outcomes are sticky; create a new monitor per attempt. X500 timing values in [`monitor_settings.py`](monitor_settings.py) (10 s start, 60 s per item, 300 s mission, 2 s telemetry age) are **model inputs / SITL development placeholders**, not measurements or PX4 parameters.
+Terminal outcomes are sticky; create a new monitor per attempt. `tighten_time_budgets` returns a copy of the settings with a shorter item and/or mission budget for SITL fault injection; it refuses any value that would lengthen a budget, is not a positive finite number, or puts the item budget above the mission budget (unit-tested only). X500 timing values in [`monitor_settings.py`](monitor_settings.py) (10 s start, 60 s per item, 300 s mission, 2 s telemetry age) are **model inputs / SITL development placeholders**, not measurements or PX4 parameters.
 
 **Evidence status:** unit-tested only (`tests/test_x500_mission_monitor.py`); mode names checked against MAVSDK-Python 3.17.2 `FlightMode` without a vehicle. One nominal SITL run reached `COMPLETED` at item 5/5 ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)). The specific modes reported during takeoff and after the last item, and the `mission_progress` values at start, were not printed and remain unobserved. No hardware, bench or flight evidence.
 
@@ -70,6 +70,12 @@ Connects the monitor to MAVSDK. `MissionTelemetryCombiner` keeps the latest flig
 
 ~~~bash
 python -m simulation.mavsdk.waypoint_mission_flight
+~~~
+
+**SITL fault injection.** `--inject-mission-budget-s S` and/or `--inject-item-budget-s S` shorten the monitor's time placeholders for one run so a normal simulated mission ends `MISSION_TIMEOUT` or `ITEM_STALLED`, the only endings where the script requests RTL because of a fault. Before this, that path could not be reached in SITL without editing code (checklist "Not covered"). Longer-than-placeholder or invalid values are refused before connecting; PX4 parameters are untouched. Such a run never prints PASS: it prints `INJECTED FAULT PATH OK` only if the monitor ended `ITEM_STALLED` or `MISSION_TIMEOUT` with the RTL proposal, the RTL was requested and the return watch saw RTL/LAND, landing and disarm. Rows A8/A9 of the [SITL checklist](../../simulation/mavsdk/SITL_SESSION_CHECKLIST.md). **Unit-tested only** with the fake vehicle; not yet run in PX4 SITL.
+
+~~~bash
+python -m simulation.mavsdk.waypoint_mission_flight --inject-mission-budget-s 20
 ~~~
 
 **Evidence status:** unit-tested only (`tests/test_x500_mission_telemetry.py`), with fake clocks and an in-memory fake vehicle. **One nominal SITL run passed** ([SITL record 2026-11-01](../../docs/SITL_VALIDATION_2026-11-01.md)): PX4 started the mission from the ground without a takeoff item, the monitor completed, RTL was requested and the vehicle landed. Still unobserved: the exact modes and stream rates (the run only shows they fit the current placeholders). Stall, takeover and stale-telemetry paths are unit-tested only. The 0.2 s check interval is a SITL placeholder; the return watch has its own placeholders (above).
