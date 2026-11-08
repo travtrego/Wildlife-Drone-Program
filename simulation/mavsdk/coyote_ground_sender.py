@@ -154,6 +154,9 @@ def _start_stdin_reader(loop: asyncio.AbstractEventLoop, lines: asyncio.Queue) -
     threading.Thread(target=read, name="ground-keyboard", daemon=True).start()
 
 
+SENDER_MAVSDK_SERVER_PORT = 50052  # local gRPC port, not a vehicle endpoint
+
+
 async def run_sender(address: str, sequence_file: Path, config: GrantTransportConfig) -> None:
     require_sitl_ground_address(address)
     config.validate()
@@ -161,7 +164,14 @@ async def run_sender(address: str, sequence_file: Path, config: GrantTransportCo
     store.last()  # refuse a corrupt sequence file before connecting
     from mavsdk import System  # imported here so unit tests need no MAVSDK
 
-    drone = System(sysid=config.ground_station_system_id, compid=config.ground_station_component_id)
+    # Own mavsdk_server port: the watch script's System() already uses the default
+    # 50051, and a second System() on 50051 silently drives the watch's server
+    # (observed in PX4 SITL 2026-11-08: commands left as 1/191 on the companion link).
+    drone = System(
+        port=SENDER_MAVSDK_SERVER_PORT,
+        sysid=config.ground_station_system_id,
+        compid=config.ground_station_component_id,
+    )
     print(
         f"Connecting to PX4 SITL ground port {address} as "
         f"{config.ground_station_system_id}/{config.ground_station_component_id} ..."
