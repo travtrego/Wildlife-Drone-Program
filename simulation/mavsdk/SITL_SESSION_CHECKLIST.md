@@ -109,6 +109,8 @@ python -m simulation.mavsdk.coyote_ground_sender                            # te
 
 *(unverified: the 14550 ground port and PX4 command forwarding between its ground and onboard links come from PX4 documentation, not from this build.)* Copy both terminals' output.
 
+**Update 2026-11-08 (cloud SIH run, [record](../../docs/SITL_VALIDATION_2026-11-08_SIH.md)):** with `--grant-source mavlink` the watch received nothing, although PX4 did forward the command. Use `--grant-source command-link` instead: the watch then listens for the command on PX4 SITL's second onboard link, and the sender prints the companion's reply (`companion ACCEPTED`, `REFUSED` or `NO REPLY`). Repeat BM1–BM4 with it on the laptop's Gazebo setup, and add one grant in POSCTL (expect `REFUSED`). Install the sim extras again first (`pymavlink` was added).
+
 ## Send back
 
 The terminal 2 output from every run (especially the Part B summary), the PX4 lines around each event, the three version lines from step 0, the ULog checksums, and whether QGC showed the alerts. I'll turn them into a dated record in `docs/` and fix any assumption that turns out wrong.

@@ -12,6 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 sim = [
   "mavsdk>=3.0,<4",
+  "pymavlink>=2.4,<3",
 ]
 dev = [
   "pytest>=8,<9",

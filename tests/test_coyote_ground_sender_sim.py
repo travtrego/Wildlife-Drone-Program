@@ -141,8 +141,9 @@ def test_grants_increment_and_revoke_uses_no_sequence(tmp_path) -> None:
     params = [json.loads(m.fields_json) for m in link.sent]
     assert [(p["param1"], p["param2"]) for p in params] == [(1.0, 1.0), (1.0, 2.0), (2.0, 0.0)]
     assert all((m.target_system_id, m.target_component_id) == (1, 191) for m in link.sent)
-    assert out[0].startswith("grant #1 sent") and out[2].startswith("revoke sent")
-    assert out[3].startswith("keys:")
+    assert out[0].startswith("grant #1 sent") and out[4].startswith("revoke sent")
+    assert out[1] == "grant #1: reply not checked"  # no ack queue given
+    assert out[6].startswith("keys:")
 
 
 def test_failed_send_is_reported_and_skips_that_sequence(tmp_path) -> None:
