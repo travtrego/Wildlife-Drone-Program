@@ -42,7 +42,9 @@ from typing import Any
 
 from coyote.autonomy.grant_transport import GrantTransportConfig
 from coyote.ground.grant_sender import (
+    AckOutcome,
     GrantSequenceStore,
+    interpret_grant_ack,
     next_grant_fields,
     revoke_command_fields,
 )
@@ -62,6 +64,7 @@ DEFAULT_GROUND_ADDRESS = "udpin://127.0.0.1:14550"
 # Outside the repository, so a test sequence never lands in Git.
 DEFAULT_SEQUENCE_FILE = Path.home() / ".cache" / "wildlife-drone" / "sitl_grant_sequence.json"
 CONNECTION_TIMEOUT_S = 30.0
+ACK_WAIT_S = 2.0  # placeholder: how long to wait for the companion's COMMAND_ACK
 
 
 def require_sitl_ground_address(address: str) -> str:
@@ -113,6 +116,47 @@ async def send_revoke(
     await drone.mavlink_direct.send_message(make_message(revoke_command_fields(config), config))
 
 
+async def pump_acks(drone: Any, acks: asyncio.Queue) -> None:
+    """Copy ``COMMAND_ACK`` messages into ``acks`` (read-only subscription)."""
+
+    async for message in drone.mavlink_direct.message("COMMAND_ACK"):
+        acks.put_nowait(message)
+
+
+async def await_reply(
+    acks: asyncio.Queue | None,
+    expected_sequence: int,
+    config: GrantTransportConfig,
+    wait_s: float = ACK_WAIT_S,
+) -> str:
+    """Text for the companion's reply to the command just sent.
+
+    Only a reply that :func:`interpret_grant_ack` matches counts. No matched
+    reply within ``wait_s`` is "unknown", never "granted".
+    """
+
+    if acks is None:
+        return "reply not checked"
+    while not acks.empty():  # drop replies to earlier commands
+        acks.get_nowait()
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + wait_s
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return f"NO REPLY in {wait_s:g} s: unknown, treat as NOT granted"
+        try:
+            message = await asyncio.wait_for(acks.get(), remaining)
+        except TimeoutError:
+            continue
+        ack = interpret_grant_ack(message, expected_sequence, config)
+        if ack is None or ack.outcome is AckOutcome.UNMATCHED:
+            continue
+        if ack.outcome is AckOutcome.CONFIRMED:
+            return "companion ACCEPTED"
+        return f"companion REFUSED (MAV_RESULT {ack.result}); see the watch log for why"
+
+
 async def handle_ground_keys(
     lines: asyncio.Queue,
     drone: Any,
@@ -120,6 +164,8 @@ async def handle_ground_keys(
     config: GrantTransportConfig,
     make_message: MessageFactory = command_message,
     emit: Callable[[str], None] = print,
+    acks: asyncio.Queue | None = None,
+    ack_wait_s: float = ACK_WAIT_S,
 ) -> None:
     """``g`` grant, ``r`` revoke, ``q`` quit. A failed send is reported, not retried."""
 
@@ -131,10 +177,12 @@ async def handle_ground_keys(
         try:
             if key == "g":
                 sequence = await send_grant(drone, store, config, make_message)
-                emit(f"grant #{sequence} sent (MAVSDK accepted it; check the watch output)")
+                emit(f"grant #{sequence} sent")
+                emit(f"grant #{sequence}: {await await_reply(acks, sequence, config, ack_wait_s)}")
             elif key == "r":
                 await send_revoke(drone, config, make_message)
-                emit("revoke sent (MAVSDK accepted it; check the watch output)")
+                emit("revoke sent")
+                emit(f"revoke: {await await_reply(acks, 0, config, ack_wait_s)}")
             elif key == "q":
                 return
             elif key:
@@ -154,6 +202,9 @@ def _start_stdin_reader(loop: asyncio.AbstractEventLoop, lines: asyncio.Queue) -
     threading.Thread(target=read, name="ground-keyboard", daemon=True).start()
 
 
+SENDER_MAVSDK_SERVER_PORT = 50052  # local gRPC port, not a vehicle endpoint
+
+
 async def run_sender(address: str, sequence_file: Path, config: GrantTransportConfig) -> None:
     require_sitl_ground_address(address)
     config.validate()
@@ -161,7 +212,14 @@ async def run_sender(address: str, sequence_file: Path, config: GrantTransportCo
     store.last()  # refuse a corrupt sequence file before connecting
     from mavsdk import System  # imported here so unit tests need no MAVSDK
 
-    drone = System(sysid=config.ground_station_system_id, compid=config.ground_station_component_id)
+    # Own mavsdk_server port: the watch script's System() already uses the default
+    # 50051, and a second System() on 50051 silently drives the watch's server
+    # (observed in PX4 SITL 2026-11-08: commands left as 1/191 on the companion link).
+    drone = System(
+        port=SENDER_MAVSDK_SERVER_PORT,
+        sysid=config.ground_station_system_id,
+        compid=config.ground_station_component_id,
+    )
     print(
         f"Connecting to PX4 SITL ground port {address} as "
         f"{config.ground_station_system_id}/{config.ground_station_component_id} ..."
@@ -173,9 +231,15 @@ async def run_sender(address: str, sequence_file: Path, config: GrantTransportCo
         f"{config.companion_component_id}. Last sequence: {store.last()} ({sequence_file})"
     )
     print("Keys + Enter: g = grant (next sequence), r = revoke, q = quit")
+    acks: asyncio.Queue = asyncio.Queue()
+    ack_task = asyncio.create_task(pump_acks(drone, acks))
     lines: asyncio.Queue = asyncio.Queue()
     _start_stdin_reader(asyncio.get_running_loop(), lines)
-    await handle_ground_keys(lines, drone, store, config)
+    try:
+        await handle_ground_keys(lines, drone, store, config, acks=acks)
+    finally:
+        ack_task.cancel()
+        await asyncio.gather(ack_task, return_exceptions=True)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

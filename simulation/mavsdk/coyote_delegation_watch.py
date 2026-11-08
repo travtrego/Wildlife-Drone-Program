@@ -47,6 +47,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from coyote.autonomy.command_link import CommandLink
 from coyote.autonomy.delegation import DelegationAuthority, GrantCommand
 from coyote.autonomy.failsafe_source import (
     HEARTBEAT_TRACKER_CONFIG,
@@ -74,7 +75,12 @@ from simulation.mavsdk.smoke_mission import _wait_for_connection
 STATUS_INTERVAL_S = 1.0
 DEFAULT_DURATION_S = 900.0
 TELEMETRY_STREAMS = ("flight_mode", "armed", "in_air", "position", "battery")
-GRANT_SOURCES = ("keyboard", "mavlink")
+GRANT_SOURCES = ("keyboard", "mavlink", "command-link")
+# PX4 SITL's second onboard MAVLink instance (px4-rc.mavlink: local 14280,
+# remote 14030, forwarding on). Fixed and localhost-only: the command-link
+# mode cannot be pointed anywhere else.
+SITL_COMMAND_LINK_PX4 = ("127.0.0.1", 14280)
+SITL_COMMAND_LINK_LOCAL = ("127.0.0.1", 14030)
 
 
 # ----------------------------------------------------------- observation log
@@ -295,6 +301,45 @@ async def _status_printer(
         await asyncio.sleep(STATUS_INTERVAL_S)
 
 
+def open_sitl_command_link(transport: GrantTransportConfig) -> Any:
+    """pymavlink connection to PX4 SITL's second onboard link, as the companion.
+
+    Sends to 127.0.0.1:14280 from 127.0.0.1:14030 (where PX4 SITL sends that
+    link's traffic). No other address is possible.
+    """
+
+    from pymavlink import mavutil  # imported here so unit tests need no pymavlink
+
+    host, port = SITL_COMMAND_LINK_PX4
+    conn = mavutil.mavlink_connection(
+        f"udpout:{host}:{port}",
+        source_system=transport.companion_system_id,
+        source_component=transport.companion_component_id,
+    )
+    conn.port.bind(SITL_COMMAND_LINK_LOCAL)
+    return conn
+
+
+def counted_link(link: CommandLink, log: ObservationLog, clock: Callable[[], float]) -> Any:
+    async def messages(message_name: str) -> AsyncIterator[Any]:
+        async for message in link.messages(message_name):
+            log.message(message_name.lower(), clock())
+            yield message
+
+    return SimpleNamespace(mavlink_direct=SimpleNamespace(message=messages))
+
+
+def ack_reporter(log: ObservationLog) -> Callable[[float, dict, str | None], None]:
+    def on_ack(now_s: float, fields: dict, error: str | None) -> None:
+        outcome = "sent" if error is None else f"FAILED ({error})"
+        log.event(
+            now_s,
+            f"COMMAND_ACK result={fields['result']} seq={fields['result_param2']} {outcome}",
+        )
+
+    return on_ack
+
+
 # ----------------------------------------------------------------- main run
 async def run_watch(
     config: SitlMissionConfig,
@@ -319,7 +364,7 @@ async def run_watch(
     from mavsdk import System  # imported here so unit tests need no MAVSDK
 
     clock = time.monotonic
-    if grant_source == "mavlink":
+    if grant_source in ("mavlink", "command-link"):
         # Identify as the companion so the ground command can be addressed to it.
         drone = System(
             sysid=transport.companion_system_id, compid=transport.companion_component_id
@@ -330,7 +375,15 @@ async def run_watch(
     await drone.connect(system_address=config.system_address)
     await _wait_for_connection(drone, config.connection_timeout_s)
     print("Connected. Watch only: this script sends no flight commands.")
-    if grant_source == "mavlink":
+    link = None
+    if grant_source == "command-link":
+        link = CommandLink(open_sitl_command_link(transport), transport)
+        print(
+            "Command link: listening as the companion on "
+            f"{SITL_COMMAND_LINK_LOCAL[0]}:{SITL_COMMAND_LINK_LOCAL[1]} "
+            "(PX4 SITL second onboard link)"
+        )
+    if grant_source != "keyboard":
         print(
             "Grants come from coyote_ground_sender (MAVLink). "
             "Keys + Enter: r = local revoke, q = quit"
@@ -356,6 +409,19 @@ async def run_watch(
         tasks.append(
             subscribe_ground_commands(
                 facade, authority, clock, stream_errors, transport, command_reporter(log)
+            )
+        )
+    elif link is not None:
+        tasks.append(
+            subscribe_ground_commands(
+                counted_link(link, log, clock),
+                authority,
+                clock,
+                stream_errors,
+                transport,
+                command_reporter(log),
+                send_ack=link.send_ack,
+                on_ack=ack_reporter(log),
             )
         )
     sender = mavsdk_status_text_sender(drone) if send_status_text else print_sender()
@@ -408,7 +474,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--grant-source",
         choices=GRANT_SOURCES,
         default="keyboard",
-        help="keyboard: 'g' stand-in (default); mavlink: COMMAND_LONG from coyote_ground_sender",
+        help=(
+            "keyboard: 'g' stand-in (default); mavlink: COMMAND_LONG via the MAVSDK link "
+            "(received nothing in SITL 2026-11-08); command-link: COMMAND_LONG on PX4 "
+            "SITL's second onboard link with COMMAND_ACK replies"
+        ),
     )
     return parser.parse_args(argv)
 
