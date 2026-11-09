@@ -1,6 +1,6 @@
 # Coyote perception plan: machine learning for individual identification
 
-**Status: plan only.** No perception code, model, dataset or test result exists yet. Requested by the owner on 2026-11-08: Coyote will use machine learning (ML) and computer vision (CV) to help identify individual coyotes. Requirements stay in [DECISIONS.md](DECISIONS.md) (R4: weekly survey population database of individually identified coyotes, identification human-confirmed). This page describes *how* we intend to meet R4; it does not change it.
+**Status: plan only.** No perception model, dataset or survey result exists yet. The only code is a candidate sighting record and human-review rules for step 2 ([`perception/sightings.py`](perception/README.md), unit-tested only). Requested by the owner on 2026-11-08: Coyote will use machine learning (ML) and computer vision (CV) to help identify individual coyotes. Requirements stay in [DECISIONS.md](DECISIONS.md) (R4: weekly survey population database of individually identified coyotes, identification human-confirmed). This page describes *how* we intend to meet R4; it does not change it.
 
 Coyote only. The X500 carries no perception or AI (owner decision 2026-10-21).
 
@@ -42,7 +42,7 @@ Live stages (1–4) only *observe and propose*. Any movement they want (hold, re
 ## Order of work
 
 1. **Feasibility first:** fly first real surveys (manual or simple waypoint) and check whether identifying marks are readable at a non-disturbing distance. This is the open risk in DECISIONS.md (resolution test skipped). If marks are not readable, revisit optics before building ML.
-2. Sighting/database schema and the review tool (stage 6), so every survey from day one produces labelled data.
+2. Sighting/database schema and the review tool (stage 6), so every survey from day one produces labelled data. *Candidate record and review rules: [`perception/sightings.py`](perception/README.md) (unit-tested only); storage, hosting and review tool not started.*
 3. Offline detector + tracker on recorded footage; then on the Jetson in replay.
 4. Shot-quality scoring and capture triggering in simulation/replay.
 5. Re-ID model once enough confirmed sightings exist.

@@ -13,7 +13,7 @@ Six-rotor wildlife research and multi-sensor robotics aircraft. **Procurement HO
 
 The full sensor suite stays permanently installed. EFT E616P is the preferred engineering candidate, conditional on fit and performance. No supplier rating, estimated mass or modeled flight time closes the purchase gate.
 
-Coyote-specific perception, fusion, mounting and aircraft configuration remain planned. The machine-learning plan for detecting and individually identifying coyotes is in [PERCEPTION_PLAN.md](PERCEPTION_PLAN.md) (plan only, no code yet). Software is inherited from `shared/` only after appropriate validation; [architecture](../docs/ARCHITECTURE.md) defines the flight-control boundary.
+Coyote-specific perception, fusion, mounting and aircraft configuration remain planned. The machine-learning plan for detecting and individually identifying coyotes is in [PERCEPTION_PLAN.md](PERCEPTION_PLAN.md) (plan; the only code so far is a candidate sighting record with human-review rules in [`perception/`](perception/README.md), unit-tested only). Software is inherited from `shared/` only after appropriate validation; [architecture](../docs/ARCHITECTURE.md) defines the flight-control boundary.
 
 ## Where to record changes
 
