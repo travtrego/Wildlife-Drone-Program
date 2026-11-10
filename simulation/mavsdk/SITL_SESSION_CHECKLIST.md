@@ -2,7 +2,7 @@
 
 A plan for one laptop session (about 45–60 minutes). **Nothing here has been run yet.** Every "expected" line is what the unit-tested code should do, written down before the run so the result can be compared against it. PX4 commands marked *(unverified)* come from PX4 documentation and memory, not from a run on this setup. If PX4 refuses one or prints something unexpected, write down exactly what it said. That is a useful result too.
 
-Simulation only. Do not connect a real aircraft, radio or MAVLink bridge. Do not disable arming checks or failsafes. The only parameters changed below are simulator settings (`SIM_BAT_*`), PX4's failure-injection switch (`SYS_FAILURE_EN`) and the SITL geofence (`GF_*`, which *enables* a PX4 limit). Reset them at the end.
+Simulation only. Do not connect a real aircraft, radio or MAVLink bridge. Do not disable arming checks or failsafes. The only parameters changed below are simulator settings (`SIM_BAT_*`), PX4's failure-injection switch (`SYS_FAILURE_EN`), the SITL geofence (`GF_*`, which *enables* a PX4 limit) and the SITL RTL altitude (`RTL_RETURN_ALT`, lowered so the return stays inside that geofence). Reset them at the end.
 
 ## 0. Setup and versions (record once)
 
@@ -35,9 +35,10 @@ Before any `waypoint_mission_flight` run, turn on a PX4 geofence. The flight scr
 param set GF_MAX_HOR_DIST 150
 param set GF_MAX_VER_DIST 40
 param set GF_ACTION 3
+param set RTL_RETURN_ALT 20
 ~~~
 
-*(unverified: parameter names and `GF_ACTION` numbering are from PX4 documentation, not checked against this build.)* Check with `param show GF_*` and record the values. If the script refuses with `GF_... = 0`, this step was missed or did not stick after a restart. At the end of the session: `param reset GF_MAX_HOR_DIST`, `param reset GF_MAX_VER_DIST`, `param reset GF_ACTION`.
+*(unverified: parameter names and `GF_ACTION` numbering are from PX4 documentation, not checked against this build.)* `RTL_RETURN_ALT` (PX4 default 60 m) must not be above `GF_MAX_VER_DIST`, or the script refuses because PX4's own return would climb into the fence; 20 m is a simulator setting below the 30 m companion ceiling, not a value for a real aircraft. Check with `param show GF_*` and `param show RTL_RETURN_ALT` and record the values. If the script refuses with `GF_... = 0` or `RTL_RETURN_ALT ... above`, this step was missed or did not stick after a restart. At the end of the session: `param reset GF_MAX_HOR_DIST`, `param reset GF_MAX_VER_DIST`, `param reset GF_ACTION`, `param reset RTL_RETURN_ALT`.
 
 After each run, record the newest ULog's name and checksum:
 

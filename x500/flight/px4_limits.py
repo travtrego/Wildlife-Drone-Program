@@ -16,6 +16,11 @@ a mission that PX4's own failsafe is set to interrupt, or rely on a margin that
 PX4 does not enforce. This check reads those parameters once before upload and
 refuses on any contradiction.
 
+The same holds inside PX4: the flight script ends every mission by requesting
+PX4 RTL, and with the PX4 default ``RTL_RETURN_ALT`` (60 m) above the SITL
+checklist's vertical geofence (40 m) the return would climb into the fence.
+``RTL_RETURN_ALT`` is therefore read and checked against ``GF_MAX_VER_DIST``.
+
 Rules (implementation choices, not owner requirements)
 ------------------------------------------------------
 - Every parameter must be read and be a finite number. An unreadable, missing,
@@ -34,6 +39,14 @@ Rules (implementation choices, not owner requirements)
   below it, otherwise PX4 would cap the flown speed below the verified one.
 - ``BAT_LOW_THR`` (fraction, must be in (0, 1)): the companion battery minimum
   must be at or above it.
+- ``RTL_RETURN_ALT`` (m above home, must be >= 0): must be at or below an
+  enabled ``GF_MAX_VER_DIST``. PX4 RTL climbs to this altitude before heading
+  home (PX4 default 60 m), so a value above the vertical geofence makes PX4's
+  own return fly into its own fence, on the one path the companion relies on
+  to end every mission. Treated as the worst-case return altitude: the
+  ``RTL_CONE_ANG`` reduction near home is not modelled (it only lowers the
+  climb). It is not compared with the companion ceiling; whether PX4's return
+  may climb above the companion ceiling is an open owner question.
 
 Authority boundary
 ------------------
@@ -48,7 +61,10 @@ Unit-tested only with fake parameter readers. The parameter names and units are
 from PX4 documentation as known to this change and were **not** checked against
 the PX4 build used in SITL (``6041c961``); a renamed or missing parameter makes
 the check refuse rather than pass. MAVSDK-Python ``param.get_param_float`` /
-``get_param_int`` are the assumed read calls. Not yet run in PX4 SITL.
+``get_param_int`` are the assumed read calls. Not yet run in PX4 SITL. The
+interaction between PX4 RTL and the vertical geofence (whether PX4 would
+actually breach, warn or clamp) is not observed; the check only refuses the
+configuration in which the documented RTL climb exceeds the fence.
 """
 
 from __future__ import annotations
@@ -68,6 +84,7 @@ PX4_LIMIT_PARAMS: dict[str, str] = {
     "GF_ACTION": "int",
     "MPC_XY_VEL_MAX": "float",
     "BAT_LOW_THR": "float",
+    "RTL_RETURN_ALT": "float",
 }
 
 # PX4 GF_ACTION values (PX4 documentation; not read from the SITL build).
@@ -194,7 +211,31 @@ def px4_limit_findings(
                 f"below PX4 BAT_LOW_THR {low:.0%}"
             )
 
+    _check_return_altitude(values, refusals)
+
     return Px4LimitReport(values=dict(values), refusals=tuple(refusals))
+
+
+def _check_return_altitude(values: dict[str, object], refusals: list[str]) -> None:
+    """PX4's RTL climb must not reach above PX4's own vertical geofence."""
+
+    rtl_alt = _number(values, "RTL_RETURN_ALT", refusals)
+    if rtl_alt is None:
+        return
+    if rtl_alt < 0.0:
+        refusals.append(f"PX4 RTL_RETURN_ALT is negative ({rtl_alt:g})")
+        return
+    fence = values.get("GF_MAX_VER_DIST")
+    if isinstance(fence, bool) or not isinstance(fence, int | float):
+        return  # already refused by the geofence check
+    fence = float(fence)
+    if not math.isfinite(fence) or fence <= 0.0:
+        return  # disabled or invalid fence is already a refusal
+    if rtl_alt > fence:
+        refusals.append(
+            f"PX4 RTL_RETURN_ALT {rtl_alt:g} m is above PX4 GF_MAX_VER_DIST {fence:g} m: "
+            f"PX4's return would climb into its own vertical geofence"
+        )
 
 
 async def read_px4_limit_params(drone: Any, timeout_s: float) -> dict[str, object]:

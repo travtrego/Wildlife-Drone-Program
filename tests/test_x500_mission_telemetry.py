@@ -371,6 +371,7 @@ class FakeVehicle:
             "GF_ACTION": 3,
             "MPC_XY_VEL_MAX": 12.0,
             "BAT_LOW_THR": 0.15,
+            "RTL_RETURN_ALT": 20.0,
         }
         self.param = SimpleNamespace(
             get_param_float=self._get_param, get_param_int=self._get_param
@@ -580,6 +581,15 @@ def test_fake_flight_refuses_ceiling_above_px4_geofence_before_upload() -> None:
     vehicle = FakeVehicle()
     vehicle.params["GF_MAX_VER_DIST"] = LIMITS.max_relative_altitude_m - 5.0
     with pytest.raises(Px4LimitsRefused, match="GF_MAX_VER_DIST"):
+        _fly(vehicle)
+    assert vehicle.plan is None and vehicle.commands == []
+
+
+def test_fake_flight_refuses_px4_default_rtl_altitude_above_fence_before_upload() -> None:
+    # Checklist fence set, RTL_RETURN_ALT left at the PX4 default (60 m > 40 m).
+    vehicle = FakeVehicle()
+    vehicle.params["RTL_RETURN_ALT"] = 60.0
+    with pytest.raises(Px4LimitsRefused, match="RTL_RETURN_ALT 60 m is above"):
         _fly(vehicle)
     assert vehicle.plan is None and vehicle.commands == []
 

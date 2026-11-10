@@ -35,9 +35,16 @@ ENFORCED = {
     "GF_ACTION": 3,
     "MPC_XY_VEL_MAX": 12.0,
     "BAT_LOW_THR": 0.15,
+    "RTL_RETURN_ALT": 20.0,
 }
-# PX4 defaults as documented (horizontal/vertical geofence disabled).
-PX4_DEFAULTS = {**ENFORCED, "GF_MAX_HOR_DIST": 0.0, "GF_MAX_VER_DIST": 0.0, "GF_ACTION": 2}
+# PX4 defaults as documented (horizontal/vertical geofence disabled, RTL at 60 m).
+PX4_DEFAULTS = {
+    **ENFORCED,
+    "GF_MAX_HOR_DIST": 0.0,
+    "GF_MAX_VER_DIST": 0.0,
+    "GF_ACTION": 2,
+    "RTL_RETURN_ALT": 60.0,
+}
 
 
 def findings(**overrides):
@@ -76,7 +83,8 @@ def test_companion_looser_than_px4_refuses(overrides, expected) -> None:
 
 def test_all_contradictions_are_reported_together() -> None:
     report = findings(GF_MAX_HOR_DIST=50.0, GF_MAX_VER_DIST=10.0, BAT_LOW_THR=0.6)
-    assert len(report.refusals) == 3
+    # Three companion contradictions plus RTL_RETURN_ALT (20 m) above the 10 m fence.
+    assert len(report.refusals) == 4
 
 
 @pytest.mark.parametrize(
@@ -125,6 +133,10 @@ def test_fully_disabled_geofence_reports_every_reason() -> None:
         ("BAT_LOW_THR", True),
         ("GF_ACTION", 2.0),
         ("GF_ACTION", None),
+        ("RTL_RETURN_ALT", -1.0),
+        ("RTL_RETURN_ALT", math.nan),
+        ("RTL_RETURN_ALT", "20"),
+        ("RTL_RETURN_ALT", False),
     ],
 )
 def test_malformed_px4_values_refuse(name, bad) -> None:
@@ -149,9 +161,59 @@ def test_documented_px4_defaults_refuse_until_a_geofence_is_set() -> None:
 
 def test_x500_sitl_settings_pass_with_the_checklist_geofence() -> None:
     # Values from simulation/mavsdk/SITL_SESSION_CHECKLIST.md (simulator settings).
-    sitl = {**PX4_DEFAULTS, "GF_MAX_HOR_DIST": 150.0, "GF_MAX_VER_DIST": 40.0, "GF_ACTION": 3}
+    sitl = {
+        **PX4_DEFAULTS,
+        "GF_MAX_HOR_DIST": 150.0,
+        "GF_MAX_VER_DIST": 40.0,
+        "GF_ACTION": 3,
+        "RTL_RETURN_ALT": 20.0,
+    }
     report = px4_limit_findings(sitl, X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS)
     assert report.consistent, report.refusals
+
+
+# --- PX4 RTL altitude vs PX4 vertical geofence ---------------------------------
+
+
+def test_rtl_return_altitude_above_vertical_geofence_refuses() -> None:
+    # The flight script ends every mission with a PX4 RTL request; PX4 climbs to
+    # RTL_RETURN_ALT first, so a higher value flies into PX4's own fence.
+    report = findings(RTL_RETURN_ALT=45.0)
+    assert report.refusals == (
+        "PX4 RTL_RETURN_ALT 45 m is above PX4 GF_MAX_VER_DIST 40 m: "
+        "PX4's return would climb into its own vertical geofence",
+    )
+
+
+@pytest.mark.parametrize("rtl_alt", [0.0, 20.0, 35.0, 40.0])
+def test_rtl_return_altitude_at_or_below_vertical_geofence_passes(rtl_alt) -> None:
+    # 35 m is above the 30 m companion ceiling: not compared (open owner question).
+    assert findings(RTL_RETURN_ALT=rtl_alt).consistent
+
+
+def test_checklist_geofence_with_px4_default_rtl_altitude_refuses() -> None:
+    # Checklist fence (40 m) but RTL_RETURN_ALT left at the PX4 default 60 m.
+    sitl = {**PX4_DEFAULTS, "GF_MAX_HOR_DIST": 150.0, "GF_MAX_VER_DIST": 40.0, "GF_ACTION": 3}
+    report = px4_limit_findings(sitl, X500_SITL_MISSION_LIMITS, X500_SITL_PREFLIGHT_LIMITS)
+    assert len(report.refusals) == 1
+    assert "RTL_RETURN_ALT 60 m is above PX4 GF_MAX_VER_DIST 40 m" in report.refusals[0]
+
+
+@pytest.mark.parametrize("fence", [0.0, -5.0, math.nan, "unreadable"])
+def test_disabled_or_invalid_fence_is_one_refusal_not_two(fence) -> None:
+    # The geofence check already refuses; the RTL comparison adds nothing.
+    report = findings(GF_MAX_VER_DIST=fence, RTL_RETURN_ALT=60.0)
+    assert len(report.refusals) == 1
+    assert "GF_MAX_VER_DIST" in report.refusals[0]
+    assert "RTL_RETURN_ALT" not in report.refusals[0]
+
+
+def test_companion_ceiling_contradiction_and_rtl_contradiction_reported_together() -> None:
+    report = findings(GF_MAX_VER_DIST=25.0, RTL_RETURN_ALT=30.0)
+    text = "; ".join(report.refusals)
+    assert len(report.refusals) == 2
+    assert "ceiling 30 m is looser than PX4 GF_MAX_VER_DIST 25 m" in text
+    assert "RTL_RETURN_ALT 30 m is above PX4 GF_MAX_VER_DIST 25 m" in text
 
 
 def test_invalid_companion_limits_raise_before_comparing() -> None:
