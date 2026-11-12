@@ -103,8 +103,12 @@ GF_ACTIONS_ACCEPTED: frozenset[int] = frozenset({2, 3, 5})
 class Px4LimitsRefused(RuntimeError):
     """The companion withheld the mission: its limits contradict PX4's."""
 
-    def __init__(self, reasons: tuple[str, ...]) -> None:
+    def __init__(
+        self, reasons: tuple[str, ...], values: dict[str, object] | None = None
+    ) -> None:
         self.reasons = tuple(reasons)
+        # What was read (or the read error per parameter), for run records.
+        self.values = dict(values or {})
         super().__init__("; ".join(self.reasons))
 
 
@@ -264,5 +268,5 @@ async def require_px4_limits_consistent(
     values = await read_px4_limit_params(drone, timeout_s)
     report = px4_limit_findings(values, mission_limits, preflight_limits)
     if report.refusals:
-        raise Px4LimitsRefused(report.refusals)
+        raise Px4LimitsRefused(report.refusals, report.values)
     return report

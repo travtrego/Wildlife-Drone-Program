@@ -4,7 +4,7 @@ This is Issue #4's simulation-only smoke mission: connect, wait for position/hom
 
 The headless X500 workflow was executed successfully on 2026-09-03. See the [validation record](../../docs/SITL_VALIDATION_2026-09-03.md) for exact versions, commands, logs, and limits. Neither a real aircraft nor the Gazebo GUI was validated.
 
-Other scripts here: `waypoint_upload_check.py` and `waypoint_mission_flight.py` (X500 flight layer; one nominal pass recorded in [the 2026-11-01 record](../../docs/SITL_VALIDATION_2026-11-01.md)) and `coyote_delegation_watch.py` (Coyote R6 watch, observation only, sends no flight commands; not yet run). [SITL_SESSION_CHECKLIST.md](SITL_SESSION_CHECKLIST.md) is the planned failure-path and watch session.
+Other scripts here: `waypoint_upload_check.py` and `waypoint_mission_flight.py` (X500 flight layer; one nominal pass recorded in [the 2026-11-01 record](../../docs/SITL_VALIDATION_2026-11-01.md)) and `coyote_delegation_watch.py` (Coyote R6 watch, observation only, sends no flight commands; not yet run). [SITL_SESSION_CHECKLIST.md](SITL_SESSION_CHECKLIST.md) is the planned failure-path and watch session. `waypoint_mission_flight.py --record-dir sitl_runs --label <row>` writes a JSON run record per run (`flight_record.py`; unit-tested only).
 
 ## How the pieces fit
 
