@@ -21,6 +21,8 @@ log/
 
 # Flight logs and large datasets
 flight_logs/
+# Local SITL run records (simulation/mavsdk/flight_record.py); copy into docs/ by choice
+sitl_runs/
 data/
 datasets/
 *.ulg

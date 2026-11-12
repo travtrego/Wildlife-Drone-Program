@@ -49,19 +49,29 @@ saw RTL/LAND, landing and disarm. Nothing is changed in PX4. One
 nominal PX4 SITL pass (before the return watch existed) is recorded in
 docs/SITL_VALIDATION_2026-11-01.md; failure paths and the return watch are
 unit-tested only.
+
+Run record (optional): ``--record-dir DIR`` writes one JSON file per run
+(:mod:`simulation.mavsdk.flight_record`) with the code revision, mission file
+checksum, companion settings in use, the PX4 limit parameters read, the
+monitor/return results, every trace line and the script's verdict, including
+refusals, errors and Ctrl+C. ``--label`` tags it with a checklist row. The
+record adds nothing on the vehicle side and does not capture PX4/Gazebo
+versions, the ULog or the PX4 console.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from shared.autonomy.sitl import SitlMissionConfig, load_sitl_config
+from simulation.mavsdk import flight_record
 from simulation.mavsdk.smoke_mission import (
     _wait_for_connection,
     _wait_for_health,
@@ -114,6 +124,8 @@ class FlightResult:
     trace_lines: tuple[str, ...] = ()
     # Return watch result after an RTL request; None when no RTL was requested.
     return_status: ReturnStatus | None = None
+    # PX4 limit parameters read before upload (read-only), for run records.
+    px4_limit_values: dict = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -154,10 +166,15 @@ async def fly_waypoint_mission(
     companion limits contradict the PX4 parameters; nothing is sent in either case.
     """
 
+    # Status lines go through ``emit`` so a run record can keep them; with no
+    # emitter they are printed as before (the trace stays silent).
+    say = emit if emit is not None else print
     await _wait_for_health(drone, health_timeout_s)
     home = await _read_home(drone, health_timeout_s)
     await require_preflight_ready(drone, preflight_limits, health_timeout_s, clock)
-    await require_px4_limits_consistent(drone, limits, preflight_limits, health_timeout_s)
+    px4_report = await require_px4_limits_consistent(
+        drone, limits, preflight_limits, health_timeout_s
+    )
     items = build_mission_items(waypoints, home, limits)
     settings = settings_for(len(items))
     monitor = MissionExecutionMonitor(settings)
@@ -172,18 +189,18 @@ async def fly_waypoint_mission(
         await upload_and_verify(drone, items, home, mission_module)
         # Upload/read-back takes time; check again immediately before arming.
         await require_preflight_ready(drone, preflight_limits, health_timeout_s, clock)
-        print(f"Mission of {len(items)} items verified; arming (PX4 checks enabled) ...")
+        say(f"Mission of {len(items)} items verified; arming (PX4 checks enabled) ...")
         await drone.action.arm()
         await drone.mission.start_mission()
         started_at = clock()
         monitor.start(started_at)
         trace.mark_start(started_at)
-        print("Mission start requested; monitoring ...")
+        say("Mission start requested; monitoring ...")
         status = await run_monitor(
             monitor, combiner, started_at, clock, check_interval_s, on_status=trace.monitor_status
         )
         reason = status.reason.value if status.reason else ""
-        print(
+        say(
             f"Monitor: {status.state.value} {reason} {status.detail} "
             f"(item {status.current_item}/{status.total_items})"
         )
@@ -192,7 +209,7 @@ async def fly_waypoint_mission(
         landed = False
         return_status: ReturnStatus | None = None
         if follow.request_return_to_launch:
-            print("Requesting PX4 RETURN_TO_LAUNCH ...")
+            say("Requesting PX4 RETURN_TO_LAUNCH ...")
             await drone.action.return_to_launch()
             requested_at = clock()
             watch = ReturnLandingMonitor(return_settings)
@@ -208,9 +225,9 @@ async def fly_waypoint_mission(
             landed = return_status.landed_and_disarmed
             reason = return_status.reason.value if return_status.reason else ""
             # Read-only result; nothing further is sent whatever it says.
-            print(f"Return watch: {return_status.state.value} {reason} {return_status.detail}")
+            say(f"Return watch: {return_status.state.value} {reason} {return_status.detail}")
         else:
-            print(f"No follow-up command: {follow.reason}")
+            say(f"No follow-up command: {follow.reason}")
         trace_lines = tuple(trace.summary_lines(settings))
         return FlightResult(
             status=status,
@@ -220,6 +237,7 @@ async def fly_waypoint_mission(
             return_status=return_status,
             stream_errors={s.value: d for s, d in combiner.stream_errors.items()},
             trace_lines=trace_lines,
+            px4_limit_values=dict(px4_report.values),
         )
     finally:
         for task in tasks:
@@ -267,6 +285,7 @@ async def run_flight(
     waypoints: list[LocalWaypoint],
     limits: MultirotorMissionLimits,
     settings_for: Callable[[int], MonitorSettings] = x500_sitl_monitor_settings,
+    emit: Callable[[str], None] | None = print,
 ) -> FlightResult:
     config.validate()  # refuses non-loopback, wildcard and serial endpoints
     reasons = check_mission(waypoints, limits)
@@ -277,11 +296,17 @@ async def run_flight(
     from mavsdk import mission as mavsdk_mission
 
     drone = System()
-    print(f"Connecting to PX4 SITL at {config.system_address} ...")
+    (emit or print)(f"Connecting to PX4 SITL at {config.system_address} ...")
     await drone.connect(system_address=config.system_address)
     await _wait_for_connection(drone, config.connection_timeout_s)
     return await fly_waypoint_mission(
-        drone, waypoints, limits, mavsdk_mission, config.health_timeout_s, settings_for
+        drone,
+        waypoints,
+        limits,
+        mavsdk_mission,
+        config.health_timeout_s,
+        settings_for,
+        emit=emit,
     )
 
 
@@ -302,11 +327,40 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="SITL fault injection: shorter whole-mission budget (s) to force MISSION_TIMEOUT",
     )
+    parser.add_argument(
+        "--record-dir",
+        type=Path,
+        default=None,
+        help="write a JSON run record here (e.g. sitl_runs/, ignored by Git)",
+    )
+    parser.add_argument(
+        "--label",
+        default=None,
+        help="run label for the record file name, e.g. a checklist row such as A3",
+    )
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(
+    argv: list[str] | None = None,
+    flight: Callable[..., Any] = run_flight,
+    revision: Callable[[], dict] = flight_record.code_revision,
+    now: Callable[[], Any] = flight_record.utc_now,
+) -> None:
+    """Entry point. ``flight``, ``revision`` and ``now`` are seams for unit tests."""
+
     args = parse_args(argv)
+    record_dir = None
+    label = None
+    try:
+        if args.label is not None:
+            if args.record_dir is None:
+                raise ValueError("--label needs --record-dir")
+            label = flight_record.validate_label(args.label)
+        if args.record_dir is not None:
+            record_dir = flight_record.prepare_record_dir(args.record_dir)
+    except (ValueError, OSError) as exc:
+        raise SystemExit(f"Refused run-record option: {exc}") from exc
     config = load_sitl_config(args.config)
     waypoints = load_waypoints(args.mission)
     injecting = args.inject_item_budget_s is not None or args.inject_mission_budget_s is not None
@@ -316,15 +370,49 @@ def main(argv: list[str] | None = None) -> None:
         )
     except ValueError as exc:
         raise SystemExit(f"Refused fault-injection budget: {exc}") from exc
+
+    lines: list[str] = []
+
+    def emit(line: str) -> None:
+        print(line)
+        lines.append(line)
+
     if injecting:
         injected = settings_for(len(waypoints))
-        print(
+        emit(
             "SITL FAULT INJECTION: monitor budgets item "
             f"{injected.max_item_time_s:g} s, mission {injected.max_mission_time_s:g} s "
             "(shortened placeholders). Expected: item_stalled or mission_timeout, "
             "RTL requested, return watch landed. This run cannot PASS."
         )
-    result = asyncio.run(run_flight(config, waypoints, X500_SITL_MISSION_LIMITS, settings_for))
+    started_utc = now()
+    result: FlightResult | None = None
+    error: BaseException | None = None
+    try:
+        result = asyncio.run(
+            flight(config, waypoints, X500_SITL_MISSION_LIMITS, settings_for, emit=emit)
+        )
+    except (Exception, KeyboardInterrupt) as exc:
+        error = exc
+        raise
+    finally:
+        if record_dir is not None:
+            _write_run_record(
+                record_dir,
+                label=label,
+                argv=sys.argv[1:] if argv is None else argv,
+                revision=revision(),
+                started_utc=started_utc,
+                ended_utc=now(),
+                config=config,
+                mission_path=args.mission,
+                waypoints=waypoints,
+                settings_for=settings_for,
+                injecting=injecting,
+                result=result,
+                error=error,
+                lines=lines,
+            )
     if result.stream_errors:
         print(f"Telemetry stream problems: {result.stream_errors}")
     if injecting:
@@ -343,6 +431,44 @@ def main(argv: list[str] | None = None) -> None:
             "FAIL: monitored SITL waypoint mission did not complete, return, land and disarm."
         )
     print("PASS: simulated waypoint mission completed, RTL requested, landed and disarmed.")
+
+
+def _write_run_record(
+    record_dir: Path,
+    *,
+    mission_path: Path,
+    waypoints: list[LocalWaypoint],
+    settings_for: Callable[[int], MonitorSettings],
+    **fields: Any,
+) -> None:
+    """Write the run record; a failure to write is reported, never raised.
+
+    Runs in ``finally`` so a refusal, error or Ctrl+C is still recorded, and
+    must not hide the exception that ended the run.
+    """
+
+    try:
+        # One mission item per waypoint (build_mission_items); an empty mission
+        # is refused before this and has no monitor settings to record.
+        monitor_settings = settings_for(len(waypoints))
+    except ValueError:
+        monitor_settings = None
+    try:
+        record = flight_record.build_record(
+            mission_path=mission_path,
+            mission_sha256=flight_record.file_sha256(mission_path),
+            waypoints=waypoints,
+            mission_limits=X500_SITL_MISSION_LIMITS,
+            preflight_limits=X500_SITL_PREFLIGHT_LIMITS,
+            monitor_settings=monitor_settings,
+            return_settings=X500_SITL_RETURN_SETTINGS,
+            **fields,
+        )
+        path = flight_record.write_record(record, record_dir)
+    except Exception as exc:  # disk full, permissions, unserializable value
+        print(f"WARNING: run record not written ({type(exc).__name__}: {exc})")
+        return
+    print(f"Run record written: {path} (outcome {record['outcome']})")
 
 
 if __name__ == "__main__":

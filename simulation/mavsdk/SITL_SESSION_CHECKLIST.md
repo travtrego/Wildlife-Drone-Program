@@ -11,7 +11,7 @@ Terminal 2 (project):
 ~~~bash
 cd ~/src/Wildlife-Drone-Program
 git fetch origin
-git checkout claude/coyote-2026-11-01-sitl-watch   # contains main + PR #25 + the watch script
+git checkout main && git pull --ff-only           # everything Part A needs is on main
 source .venv/bin/activate
 pip install -e ".[dev,sim]" -c simulation/mavsdk/constraints-validated.txt
 pytest -q
@@ -49,6 +49,14 @@ ls -t ~/src/PX4-Autopilot/build/px4_sitl_default/rootfs/log/*/*.ulg | head -1 | 
 If a run leaves the vehicle in an odd state, stop PX4 with Ctrl+C in terminal 1 and start it again. That is always safe here.
 
 ## Part A: X500 mission failure paths (code already on main)
+
+**Run records (added 2026-11-12, unit-tested only).** Add `--record-dir sitl_runs --label <row>` to every run, for example:
+
+~~~bash
+python -m simulation.mavsdk.waypoint_mission_flight --record-dir sitl_runs --label A0
+~~~
+
+Each run then writes one JSON file to `sitl_runs/` (ignored by Git), even when the script refuses, fails, errors or is stopped with Ctrl+C: code revision and whether tracked files were modified, mission file checksum, the companion placeholders in use, the PX4 geofence/speed/battery/RTL parameters it read, the monitor and return-watch results, every trace line and the script's verdict. Sending back the `sitl_runs/` files replaces copying terminal 2 by hand. The record does **not** contain the PX4/Gazebo versions, the ULog checksum or the PX4 console lines, so step 0 and the per-run ULog line above are still needed. `--label` only accepts letters, digits, `-` and `_`.
 
 Run the mission with `python -m simulation.mavsdk.waypoint_mission_flight` in terminal 2. In terminal 1, type the PX4 command once the script prints `Mission start requested; monitoring ...` and the vehicle has passed waypoint 1 or 2.
 
@@ -121,4 +129,4 @@ python -m simulation.mavsdk.coyote_ground_sender                            # te
 
 ## Send back
 
-The terminal 2 output from every run (especially the Part B summary), the PX4 lines around each event, the three version lines from step 0, the ULog checksums, and whether QGC showed the alerts. I'll turn them into a dated record in `docs/` and fix any assumption that turns out wrong.
+The `sitl_runs/*.json` files from Part A, the terminal 2 output from every run (especially the Part B summary), the PX4 lines around each event, the three version lines from step 0, the ULog checksums, and whether QGC showed the alerts. I'll turn them into a dated record in `docs/` and fix any assumption that turns out wrong.
