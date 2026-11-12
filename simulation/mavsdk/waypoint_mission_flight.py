@@ -11,10 +11,11 @@ listener (same guard as the smoke mission). Sequence:
    True. This keeps the script from replacing a mission on a vehicle that is
    already armed or flying.
 3a. PX4 limit check (``require_px4_limits_consistent``): read ``GF_MAX_HOR_DIST``,
-   ``GF_MAX_VER_DIST``, ``GF_ACTION``, ``MPC_XY_VEL_MAX`` and ``BAT_LOW_THR``
-   (read-only) and refuse, sending nothing, if the companion limits are looser
-   than PX4's, a PX4 geofence limit is disabled (0), ``GF_ACTION`` is not
-   Hold/Return/Land, or a value cannot be read.
+   ``GF_MAX_VER_DIST``, ``GF_ACTION``, ``MPC_XY_VEL_MAX``, ``BAT_LOW_THR`` and
+   ``RTL_RETURN_ALT`` (read-only) and refuse, sending nothing, if the companion
+   limits are looser than PX4's, a PX4 geofence limit is disabled (0),
+   ``GF_ACTION`` is not Hold/Return/Land, PX4's RTL altitude is above its
+   vertical geofence, or a value cannot be read.
 4. Start read-only telemetry subscriptions, upload the mission and verify it by
    read-back (``upload_and_verify``).
 5. Re-run the preflight gate, then arm (PX4 arming checks stay enabled) and
