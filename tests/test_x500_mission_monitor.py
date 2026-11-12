@@ -15,6 +15,7 @@ from x500.flight.mission_monitor import (
     MonitorSettings,
     Recommendation,
     normalize_flight_mode,
+    tighten_time_budgets,
 )
 from x500.flight.monitor_settings import x500_sitl_monitor_settings
 
@@ -437,3 +438,79 @@ def test_mode_names_are_mavsdk_flight_modes():
 
     names = {member.name for member in telemetry.FlightMode}
     assert PILOT_CONTROLLED_MODES | AUTOPILOT_RECOVERY_MODES | COMPLETION_MODES <= names
+
+
+# --- SITL fault-injection budgets (tighten only) ----------------------------
+
+
+def test_tightened_item_budget_turns_slow_item_into_rtl_proposal():
+    tight = tighten_time_budgets(settings(), max_item_time_s=2.0)
+    monitor = MissionExecutionMonitor(tight)
+    monitor.start(0.0)
+    monitor.update(sample(1.0, current=1))
+    monitor.update(sample(3.5, current=1))
+    status = monitor.check(3.6)  # 2.6 s on item 1
+    assert status.reason is EndReason.ITEM_STALLED
+    assert status.recommendation is Recommendation.RETURN_TO_LAUNCH
+    # The untightened placeholder (20 s) would still be in progress here.
+    normal = started()
+    normal.update(sample(1.0, current=1))
+    normal.update(sample(3.5, current=1))
+    assert normal.check(3.6).state is MissionState.IN_PROGRESS
+
+
+def test_tightened_mission_budget_lowers_item_budget_and_keeps_other_fields():
+    base = settings(completion_grace_s=3.0)
+    tight = tighten_time_budgets(base, max_mission_time_s=8.0)
+    assert tight.max_mission_time_s == 8.0
+    assert tight.max_item_time_s == 8.0  # was 20 s, cannot exceed the mission budget
+    assert (tight.start_timeout_s, tight.max_telemetry_age_s, tight.completion_grace_s) == (
+        base.start_timeout_s,
+        base.max_telemetry_age_s,
+        base.completion_grace_s,
+    )
+    assert tight.expected_item_count == base.expected_item_count
+
+
+def test_tightened_mission_budget_ends_as_mission_timeout():
+    monitor = MissionExecutionMonitor(tighten_time_budgets(settings(), max_mission_time_s=8.0))
+    monitor.start(0.0)
+    for t, item in ((1.0, 1), (4.0, 2), (7.0, 3)):
+        monitor.update(sample(t, current=item))
+    assert monitor.update(sample(8.5, current=3)).state is MissionState.IN_PROGRESS
+    status = monitor.check(9.5)  # 8.5 s after MISSION was first reported at 1.0 s
+    assert status.reason is EndReason.MISSION_TIMEOUT
+    assert status.recommendation is Recommendation.RETURN_TO_LAUNCH
+
+
+def test_no_override_returns_equal_settings():
+    assert tighten_time_budgets(settings()) == settings()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"max_item_time_s": 21.0},  # longer than the 20 s budget
+        {"max_mission_time_s": 61.0},  # longer than the 60 s budget
+        {"max_item_time_s": 0.0},
+        {"max_item_time_s": -1.0},
+        {"max_mission_time_s": math.nan},
+        {"max_mission_time_s": math.inf},
+        {"max_item_time_s": True},
+        {"max_item_time_s": "5"},
+        {"max_item_time_s": 10.0, "max_mission_time_s": 5.0},  # item above new mission
+    ],
+)
+def test_fault_injection_refuses_anything_but_a_valid_tightening(overrides):
+    with pytest.raises(ValueError):
+        tighten_time_budgets(settings(), **overrides)
+
+
+def test_fault_injection_validates_the_base_settings():
+    with pytest.raises(ValueError):
+        tighten_time_budgets(settings(start_timeout_s=0.0), max_item_time_s=5.0)
+
+
+def test_x500_placeholders_can_be_tightened_for_sitl():
+    tight = tighten_time_budgets(x500_sitl_monitor_settings(5), max_mission_time_s=20.0)
+    assert (tight.max_item_time_s, tight.max_mission_time_s) == (20.0, 20.0)

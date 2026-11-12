@@ -14,7 +14,12 @@ from types import SimpleNamespace
 import pytest
 
 from shared.autonomy.sitl import SitlMissionConfig
-from simulation.mavsdk.waypoint_mission_flight import fly_waypoint_mission, run_flight
+from simulation.mavsdk.waypoint_mission_flight import (
+    fault_injected_settings_for,
+    fly_waypoint_mission,
+    main,
+    run_flight,
+)
 from x500.flight.mission_monitor import (
     EndReason,
     MissionExecutionMonitor,
@@ -533,6 +538,89 @@ def test_fake_flight_pilot_takeover_sends_no_follow_up() -> None:
     assert vehicle.commands == ["arm", "start_mission"]
     assert not result.passed
     assert result.return_status is None  # no RTL request, so no return watch
+
+
+def _fly_injected(vehicle, **budgets):
+    settings_for = fault_injected_settings_for(
+        lambda n: settings(expected_item_count=n), **budgets
+    )
+    return asyncio.run(
+        fly_waypoint_mission(
+            vehicle,
+            SQUARE,
+            LIMITS,
+            MISSION_MODULE,
+            health_timeout_s=1.0,
+            settings_for=settings_for,
+            check_interval_s=0.01,
+            return_settings=FAST_RETURN,
+        )
+    )
+
+
+def test_injected_mission_budget_on_normal_flight_takes_rtl_path_but_never_passes() -> None:
+    # The fake vehicle progresses normally; only the monitor budget is shortened.
+    vehicle = FakeVehicle()
+    result = _fly_injected(vehicle, max_mission_time_s=0.05)
+    assert result.status.reason is EndReason.MISSION_TIMEOUT
+    assert result.rtl_requested and result.landed
+    assert result.return_status.state is ReturnState.LANDED
+    assert result.injected_fault_path_ok
+    assert not result.passed
+    # One RTL request, nothing after it.
+    assert vehicle.commands == ["arm", "start_mission", "return_to_launch"]
+
+
+def test_injected_fault_path_not_ok_when_return_does_not_finish() -> None:
+    vehicle = FakeVehicle()
+    vehicle.auto_disarm = False
+    result = _fly_injected(vehicle, max_mission_time_s=0.05)
+    assert result.status.reason is EndReason.MISSION_TIMEOUT and result.rtl_requested
+    assert result.return_status.reason is ReturnEndReason.LANDED_NOT_DISARMED
+    assert not result.injected_fault_path_ok
+
+
+def test_injected_fault_path_not_ok_for_a_completed_mission() -> None:
+    result = _fly_injected(FakeVehicle())  # no budget given: normal settings
+    assert result.status.state is MissionState.COMPLETED and result.passed
+    assert not result.injected_fault_path_ok
+
+
+def test_injected_budget_does_not_override_pilot_takeover() -> None:
+    vehicle = FakeVehicle()
+    original_start = vehicle.mission.start_mission
+
+    async def start_then_takeover():
+        await original_start()
+
+        async def takeover():
+            await asyncio.sleep(0.04)
+            vehicle.mode = Mode.POSCTL
+            vehicle.stall = True  # stands in for the pilot holding position
+
+        vehicle._takeover = asyncio.get_running_loop().create_task(takeover())
+
+    vehicle.mission.start_mission = start_then_takeover
+    result = _fly_injected(vehicle, max_mission_time_s=0.5)
+    assert result.status.reason is EndReason.PILOT_TAKEOVER
+    assert vehicle.commands == ["arm", "start_mission"]
+    assert not result.injected_fault_path_ok
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--inject-item-budget-s", "61"],  # X500 placeholder is 60 s
+        ["--inject-mission-budget-s", "301"],  # X500 placeholder is 300 s
+        ["--inject-item-budget-s", "0"],
+        ["--inject-item-budget-s", "nan"],
+        ["--inject-item-budget-s", "30", "--inject-mission-budget-s", "20"],
+    ],
+)
+def test_entry_point_refuses_loosening_or_invalid_budget_before_connecting(argv) -> None:
+    # Refused before run_flight, so nothing is imported or connected.
+    with pytest.raises(SystemExit, match="Refused fault-injection budget"):
+        main(argv)
 
 
 @pytest.mark.parametrize(

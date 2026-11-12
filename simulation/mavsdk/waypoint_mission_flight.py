@@ -35,7 +35,17 @@ listener (same guard as the smoke mission). Sequence:
    any case: no retry, no LAND, no disarm.
 
 PASS means the monitor saw the mission complete and, after the RTL request,
-the return watch saw PX4 enter RTL/LAND, land and disarm, in simulation. One
+the return watch saw PX4 enter RTL/LAND, land and disarm, in simulation.
+
+SITL fault injection (optional): ``--inject-item-budget-s`` and
+``--inject-mission-budget-s`` replace the monitor's item/mission time
+placeholders with *shorter* values (longer values are refused), so a normal
+simulated mission ends ``ITEM_STALLED`` or ``MISSION_TIMEOUT``. That is the
+only path on which this script sends a command because of a monitor fault (the
+proposed RTL), and it could not be exercised in SITL without editing code.
+Such a run never prints PASS: it prints ``INJECTED FAULT PATH OK`` only when the
+monitor ended ITEM_STALLED or MISSION_TIMEOUT, RTL was requested and the watch
+saw RTL/LAND, landing and disarm. Nothing is changed in PX4. One
 nominal PX4 SITL pass (before the return watch existed) is recorded in
 docs/SITL_VALIDATION_2026-11-01.md; failure paths and the return watch are
 unit-tested only.
@@ -58,10 +68,13 @@ from simulation.mavsdk.smoke_mission import (
 )
 from simulation.mavsdk.waypoint_upload_check import _read_home, load_waypoints
 from x500.flight.mission_monitor import (
+    EndReason,
     MissionExecutionMonitor,
     MissionState,
     MissionStatus,
     MonitorSettings,
+    Recommendation,
+    tighten_time_budgets,
 )
 from x500.flight.mission_telemetry import (
     MissionTelemetryCombiner,
@@ -105,6 +118,20 @@ class FlightResult:
     @property
     def passed(self) -> bool:
         return self.status.state is MissionState.COMPLETED and self.rtl_requested and self.landed
+
+    @property
+    def injected_fault_path_ok(self) -> bool:
+        """True when a time-budget fault ended the mission and the RTL path completed.
+
+        Used only for ``--inject-*`` SITL runs; it is never a mission PASS.
+        """
+
+        return (
+            self.status.reason in (EndReason.ITEM_STALLED, EndReason.MISSION_TIMEOUT)
+            and self.status.recommendation is Recommendation.RETURN_TO_LAUNCH
+            and self.rtl_requested
+            and self.landed
+        )
 
 
 async def fly_waypoint_mission(
@@ -207,10 +234,39 @@ async def fly_waypoint_mission(
                 emit(f"Trace stopped early: {combiner.observer_error}")
 
 
+def fault_injected_settings_for(
+    base: Callable[[int], MonitorSettings] = x500_sitl_monitor_settings,
+    max_item_time_s: float | None = None,
+    max_mission_time_s: float | None = None,
+) -> Callable[[int], MonitorSettings]:
+    """Return a ``settings_for`` that tightens ``base``'s time budgets (SITL only).
+
+    Checked once here with a one-item mission so a loosening or invalid value is
+    refused before connecting; :func:`tighten_time_budgets` checks again for the
+    real item count.
+    """
+
+    if max_item_time_s is None and max_mission_time_s is None:
+        return base
+    tighten_time_budgets(
+        base(1), max_item_time_s=max_item_time_s, max_mission_time_s=max_mission_time_s
+    )
+
+    def settings_for(expected_item_count: int) -> MonitorSettings:
+        return tighten_time_budgets(
+            base(expected_item_count),
+            max_item_time_s=max_item_time_s,
+            max_mission_time_s=max_mission_time_s,
+        )
+
+    return settings_for
+
+
 async def run_flight(
     config: SitlMissionConfig,
     waypoints: list[LocalWaypoint],
     limits: MultirotorMissionLimits,
+    settings_for: Callable[[int], MonitorSettings] = x500_sitl_monitor_settings,
 ) -> FlightResult:
     config.validate()  # refuses non-loopback, wildcard and serial endpoints
     reasons = check_mission(waypoints, limits)
@@ -225,25 +281,63 @@ async def run_flight(
     await drone.connect(system_address=config.system_address)
     await _wait_for_connection(drone, config.connection_timeout_s)
     return await fly_waypoint_mission(
-        drone, waypoints, limits, mavsdk_mission, config.health_timeout_s
+        drone, waypoints, limits, mavsdk_mission, config.health_timeout_s, settings_for
     )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     here = Path(__file__).parent
     parser = argparse.ArgumentParser(description="X500 SITL monitored waypoint mission")
     parser.add_argument("--config", type=Path, default=here / "sitl_config.json")
     parser.add_argument("--mission", type=Path, default=here / "x500_waypoint_square.json")
-    return parser.parse_args()
+    parser.add_argument(
+        "--inject-item-budget-s",
+        type=float,
+        default=None,
+        help="SITL fault injection: shorter per-item budget (s) to force ITEM_STALLED",
+    )
+    parser.add_argument(
+        "--inject-mission-budget-s",
+        type=float,
+        default=None,
+        help="SITL fault injection: shorter whole-mission budget (s) to force MISSION_TIMEOUT",
+    )
+    return parser.parse_args(argv)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     config = load_sitl_config(args.config)
     waypoints = load_waypoints(args.mission)
-    result = asyncio.run(run_flight(config, waypoints, X500_SITL_MISSION_LIMITS))
+    injecting = args.inject_item_budget_s is not None or args.inject_mission_budget_s is not None
+    try:
+        settings_for = fault_injected_settings_for(
+            x500_sitl_monitor_settings, args.inject_item_budget_s, args.inject_mission_budget_s
+        )
+    except ValueError as exc:
+        raise SystemExit(f"Refused fault-injection budget: {exc}") from exc
+    if injecting:
+        injected = settings_for(len(waypoints))
+        print(
+            "SITL FAULT INJECTION: monitor budgets item "
+            f"{injected.max_item_time_s:g} s, mission {injected.max_mission_time_s:g} s "
+            "(shortened placeholders). Expected: item_stalled or mission_timeout, "
+            "RTL requested, return watch landed. This run cannot PASS."
+        )
+    result = asyncio.run(run_flight(config, waypoints, X500_SITL_MISSION_LIMITS, settings_for))
     if result.stream_errors:
         print(f"Telemetry stream problems: {result.stream_errors}")
+    if injecting:
+        if not result.injected_fault_path_ok:
+            raise SystemExit(
+                "FAIL: injected time-budget fault did not end with the monitor's RTL "
+                "proposal, an RTL request, landing and disarm."
+            )
+        print(
+            "INJECTED FAULT PATH OK: monitor ended "
+            f"{result.status.reason.value}, RTL requested, landed and disarmed (not a PASS)."
+        )
+        return
     if not result.passed:
         raise SystemExit(
             "FAIL: monitored SITL waypoint mission did not complete, return, land and disarm."

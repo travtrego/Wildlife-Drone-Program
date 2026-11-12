@@ -67,7 +67,14 @@ For each run, copy the full terminal 2 output and the PX4 lines from terminal 1 
 
 Learned 2026-11-01: PX4 refuses `commander arm`/`takeoff` from the shell unless a MAVSDK client (ground station) is connected, so A1/A2 need the watch script or QGC running; POSCTL is refused without RC. See the [afternoon record](../../docs/SITL_VALIDATION_2026-11-01_FAILURE_PATHS.md).
 
-Not covered: per-item stall and mission timeout (no easy way to induce them without changing code), and a real RC pilot takeover.
+Monitor time-budget faults (the only path where the script sends a command because of a monitor fault: the proposed RTL). Added after this checklist was first written; *not yet run*. The flags only shorten the monitor's SITL placeholders (60 s per item, 300 s mission); longer values are refused and nothing is changed in PX4. These runs print `INJECTED FAULT PATH OK` or `FAIL`, never `PASS`.
+
+| # | What to do | Expected script result | Then |
+|---|---|---|---|
+| A8 | `python -m simulation.mavsdk.waypoint_mission_flight --inject-mission-budget-s 20` | Banner `SITL FAULT INJECTION ...`; about 20 s after PX4 first reports MISSION: `ended mission_timeout`, `Requesting PX4 RETURN_TO_LAUNCH`, `Return watch: landed`, `INJECTED FAULT PATH OK`. If the vehicle is still climbing or the mission finishes first, record the trace (item times) and pick a value from it | — |
+| A9 | `... --inject-item-budget-s N`, with N taken from the A0/A8 trace: longer than the takeoff item, shorter than a 20 m leg | `ended item_stalled`, RTL requested, `Return watch: landed`, `INJECTED FAULT PATH OK`. If N is shorter than the takeoff item the stall fires during the climb; record what PX4 and the return watch did | — |
+
+Not covered: a real stall or timeout (the vehicle here flies normally; only the budget is shortened), and a real RC pilot takeover.
 
 ## Part B: Coyote R6 watch (new script; sends no flight commands)
 

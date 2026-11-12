@@ -32,7 +32,7 @@ the index of the active item and equals ``total`` once the mission is done.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 # PX4 flight-mode names as reported by MAVSDK ``telemetry.flight_mode()``.
@@ -112,6 +112,55 @@ class MonitorSettings:
             raise ValueError("completion_grace_s must be a non-negative finite number")
         if self.max_item_time_s > self.max_mission_time_s:
             raise ValueError("max_item_time_s must not exceed max_mission_time_s")
+
+
+def tighten_time_budgets(
+    settings: MonitorSettings,
+    *,
+    max_item_time_s: float | None = None,
+    max_mission_time_s: float | None = None,
+) -> MonitorSettings:
+    """Return ``settings`` with the item and/or mission time budget made *shorter*.
+
+    For SITL fault injection: a deliberately short budget makes the monitor end
+    with ``ITEM_STALLED`` or ``MISSION_TIMEOUT`` (its only RTL-recommending
+    endings) on an otherwise normal simulated mission, without changing code or
+    PX4. It can only tighten: a value that is not a positive finite number, or
+    is longer than the budget it replaces, raises ``ValueError``. When only the
+    mission budget is given and it is shorter than the item budget, the item
+    budget is lowered to the mission budget (``validate`` requires item <=
+    mission); an explicit item budget above the new mission budget is refused.
+    Every other field is unchanged.
+    """
+
+    settings.validate()
+    for name, value in (
+        ("max_item_time_s", max_item_time_s),
+        ("max_mission_time_s", max_mission_time_s),
+    ):
+        if value is None:
+            continue
+        if not _is_finite_number(value) or value <= 0:
+            raise ValueError(f"{name} must be a positive finite number")
+        if value > getattr(settings, name):
+            raise ValueError(
+                f"{name} {value:g} s would loosen the {getattr(settings, name):g} s budget; "
+                "fault injection may only tighten it"
+            )
+    mission = settings.max_mission_time_s if max_mission_time_s is None else max_mission_time_s
+    if max_item_time_s is None:
+        item = min(settings.max_item_time_s, mission)
+    else:
+        item = max_item_time_s
+        if item > mission:
+            raise ValueError(
+                f"max_item_time_s {item:g} s exceeds max_mission_time_s {mission:g} s"
+            )
+    tightened = replace(
+        settings, max_item_time_s=float(item), max_mission_time_s=float(mission)
+    )
+    tightened.validate()
+    return tightened
 
 
 @dataclass(frozen=True)
