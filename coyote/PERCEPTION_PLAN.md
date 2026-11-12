@@ -42,7 +42,7 @@ Live stages (1–4) only *observe and propose*. Any movement they want (hold, re
 ## Order of work
 
 1. **Feasibility first:** fly first real surveys (manual or simple waypoint) and check whether identifying marks are readable at a non-disturbing distance. This is the open risk in DECISIONS.md (resolution test skipped). If marks are not readable, revisit optics before building ML.
-2. Sighting/database schema and the review tool (stage 6), so every survey from day one produces labelled data. *Candidate record and review rules: [`perception/sightings.py`](perception/README.md) (unit-tested only); storage, hosting and review tool not started.*
+2. Sighting/database schema and the review tool (stage 6), so every survey from day one produces labelled data. *Candidate record and review rules: [`perception/sightings.py`](perception/README.md) (unit-tested only); storage decided 2026-11-12 (local SQLite file, imagery on an external drive); storage code and review tool not started.*
 3. Offline detector + tracker on recorded footage; then on the Jetson in replay.
 4. Shot-quality scoring and capture triggering in simulation/replay.
 5. Re-ID model once enough confirmed sightings exist.
@@ -59,6 +59,6 @@ Live stages (1–4) only *observe and propose*. Any movement they want (hold, re
 ## Owner decisions needed later
 
 - What counts as a confirmed individual (which marks, how many matching photos).
-- Database layout and where it is hosted.
+- Database table layout and backup copy. *Storage decided 2026-11-12: a local SQLite file for records, imagery on an external hard drive ([DECISIONS.md](DECISIONS.md)).*
 - Minimum stand-off distance and approach rules near animals.
 - Whether re-ID suggestions may ever be accepted automatically. Until decided, every ID is human-confirmed (R4).
