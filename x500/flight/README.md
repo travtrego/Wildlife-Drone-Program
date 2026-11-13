@@ -2,6 +2,25 @@
 
 Waypoint-autonomy code exercised first on the X500 (owner decision 2026-10-21: no Jetson, perception or AI logic on the X500). Code is aircraft-agnostic; per-aircraft numbers are passed in as settings so Coyote can reuse it. It stays here, not in `shared/`, until it has SITL evidence (shared-code rule in [ARCHITECTURE.md](../../docs/ARCHITECTURE.md)).
 
+## Settings: SITL placeholders vs real-aircraft profile
+
+The numbers the SITL scripts use live in [`settings.py`](settings.py) and [`monitor_settings.py`](monitor_settings.py) and are **SITL development placeholders**. They are not a real-X500 configuration and are not copied into one.
+
+[`aircraft_profile.py`](aircraft_profile.py) (aircraft-agnostic) builds the same settings objects (`MultirotorMissionLimits`, `PreflightLimits`, a `MonitorSettings` factory, `ReturnSettings`) from a mapping of 15 `ModelInput`s, each with a value, a source and a reference. It refuses, listing every reason, until each field has a finite value, a reference (decision date, bench record or log name) and a source of an accepted kind:
+
+| Fields | Accepted sources |
+|---|---|
+| Mission limits (ceiling, floor, distance from home, speed, waypoint count), preflight battery minimum | owner choice (still checked against PX4 at run time by `px4_limits`) |
+| Telemetry silence limit (shared by preflight, mission monitor and return watch) | owner choice, bench or flight measurement |
+| Mission-monitor and return-watch time budgets | owner choice or flight measurement |
+| `usable_flight_time_s` (takeoff → landing battery reserve, this airframe, pack and payload) | flight measurement only |
+
+SITL placeholders and catalogue claims are never accepted. It also refuses when the existing `validate()` rules fail, and when `max_mission_time_s + max_return_time_s` exceeds `usable_flight_time_s` (a consistency check between inputs, not an endurance claim).
+
+[`x500_real_profile.py`](x500_real_profile.py) holds the real-X500 inputs: **all 15 are empty**, each with a note on what evidence fills it. The battery pack (owner-bought 4S 5500 mAh LiPo) and the Holybro catalogue claim (about 18 min hover on 5000 mAh, no payload) are recorded there as reference facts only; the claim cannot fill `usable_flight_time_s`. No script uses this profile: a real-aircraft entry point is an owner decision and is not implemented.
+
+**Evidence status:** unit-tested only (`tests/test_x500_aircraft_profile.py`). No real-X500 value has been filled in.
+
 ## `mission_monitor.py`
 
 Deterministic classifier for a waypoint mission that PX4 is already flying. It never commands the vehicle. Feed it timestamped samples of flight mode, armed, in-air and MAVSDK `mission_progress` (`current`, `total`); call `check(now)` periodically so silence is detected.
